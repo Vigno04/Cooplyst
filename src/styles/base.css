@@ -1,0 +1,101 @@
+/* ============================================================
+   BASE — CSS variables, reset, body, CRT effects
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+:root {
+    --bg-color: #0b0f19;
+    --panel-bg: rgba(10, 15, 30, 0.85);
+    --border-color: #4a90e2;
+    --text-primary: #ffffff;
+    --text-blue: #4a90e2;
+    --text-red: #e24a4a;
+    --text-yellow: #f8e71c;
+    --text-green: #50e3c2;
+    --font-retro: 'Press Start 2P', monospace;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-retro);
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+
+    /* Retro dithered gradient */
+    background-image:
+        url("data:image/svg+xml,%3Csvg width='4' height='4' viewBox='0 0 4 4' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h2v2H0V0zm2 2h2v2H2V2z' fill='rgba(0,0,0,0.35)' fill-rule='evenodd'/%3E%3C/svg%3E"),
+        linear-gradient(180deg, #050b14 0%, #152240 60%, #1e3a67 100%);
+    background-size: 8px 8px, 100% 100%;
+    background-attachment: fixed;
+
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* CRT Screen Wrapper */
+.crtscreen {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.scanlines {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%,
+            rgba(0, 0, 0, 0.25) 50%);
+    background-size: 100% 4px;
+    z-index: 100;
+    pointer-events: none;
+}
+
+/* Utility colour classes */
+.text-blue {
+    color: var(--text-blue);
+}
+
+.text-red {
+    color: var(--text-red);
+}
+
+.text-yellow {
+    color: var(--text-yellow);
+}
+
+.text-green {
+    color: var(--text-green);
+}
+
+/* Utility spacing */
+.mt-4 {
+    margin-top: 2rem;
+}
+
+/* Shared pulse animation */
+@keyframes pulse {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.7;
+        transform: scale(1.1);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}

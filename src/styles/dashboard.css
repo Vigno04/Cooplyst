@@ -1,0 +1,250 @@
+/* ============================================================
+   DASHBOARD — main app layout: header, nav, profile, footer
+   ============================================================ */
+
+.dashboard-layout {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    width: 100%;
+}
+
+/* Header */
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    background: rgba(0, 0, 0, 0.4);
+    border-bottom: 2px solid var(--border-color);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.dashboard-logo-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dashboard-logo-text {
+    font-size: 1.5rem;
+    margin-left: 0.5rem;
+    text-shadow: 2px 2px 0 #000, 0 0 10px rgba(74, 144, 226, 0.3);
+}
+
+/* Navigation */
+.dashboard-nav {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.nav-link {
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    transition: color 0.2s, text-shadow 0.2s;
+    padding: 0.4rem 0.6rem;
+    border: 2px solid transparent;
+    transition: color 0.2s, text-shadow 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.nav-link:hover {
+    color: var(--text-yellow);
+    text-shadow: 0 0 8px rgba(248, 231, 28, 0.6);
+    border-color: rgba(248, 231, 28, 0.3);
+    box-shadow: 0 0 8px rgba(248, 231, 28, 0.2);
+}
+
+/* Profile icon */
+.dashboard-profile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 2px solid var(--text-blue);
+    border-radius: 50%;
+    background: var(--panel-bg);
+    cursor: pointer;
+    transition: box-shadow 0.2s, border-color 0.2s;
+    position: relative;
+    box-shadow: 0 0 8px rgba(74, 144, 226, 0.3);
+}
+
+.dashboard-profile:hover {
+    border-color: var(--text-green);
+    box-shadow: 0 0 14px rgba(80, 227, 194, 0.6);
+}
+
+.dashboard-profile-icon {
+    color: var(--text-primary);
+}
+
+.dashboard-profile-avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    image-rendering: auto;
+}
+
+/* Main content area */
+.dashboard-main {
+    flex: 1;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    color: var(--text-primary);
+}
+
+/* Footer */
+.dashboard-footer {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    padding: 1.5rem;
+    background: rgba(0, 0, 0, 0.4);
+    border-top: 2px solid var(--text-blue);
+}
+
+.footer-link {
+    color: var(--text-blue);
+    text-decoration: none;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    transition: color 0.2s;
+}
+
+.footer-link:hover {
+    color: var(--text-green);
+    text-shadow: 0 0 8px rgba(80, 227, 194, 0.5);
+}
+
+/* In-dashboard WIP page */
+.dashboard-wip {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.dashboard-wip-box {
+    background: var(--panel-bg);
+    border: 4px solid var(--text-yellow);
+    padding: 3rem 2.5rem;
+    max-width: 500px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    text-align: center;
+    box-shadow:
+        0 0 20px rgba(248, 231, 28, 0.35),
+        inset 0 0 20px rgba(248, 231, 28, 0.15);
+}
+
+.dashboard-wip-title {
+    font-size: 1.2rem;
+    text-shadow: 2px 2px 0 #000, 0 0 12px rgba(248, 231, 28, 0.5);
+    letter-spacing: 2px;
+}
+
+.dashboard-wip-text {
+    font-size: 0.75rem;
+    line-height: 1.8;
+    color: var(--text-primary);
+}
+
+/* Profile dropdown */
+.profile-dropdown {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: -4px;
+    background: var(--panel-bg);
+    border: 4px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    box-shadow:
+        0 0 15px rgba(74, 144, 226, 0.6),
+        inset 0 0 10px rgba(74, 144, 226, 0.4);
+    min-width: 160px;
+    z-index: 200;
+}
+
+.profile-option {
+    padding: 0.8rem 1rem;
+    color: var(--text-primary);
+    font-family: var(--font-retro);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    transition: background 0.2s, color 0.2s;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+
+.profile-option:hover {
+    background: rgba(74, 144, 226, 0.3);
+    color: var(--text-yellow);
+}
+
+.profile-option--logout {
+    border-top: 2px solid rgba(74, 144, 226, 0.4);
+    color: var(--text-red);
+}
+
+.profile-option--logout:hover {
+    background: rgba(226, 74, 74, 0.2);
+    color: var(--text-red);
+}
+
+@media (max-width: 768px) {
+    .dashboard-header {
+        flex-direction: column;
+        gap: 1rem;
+        padding: 1rem;
+    }
+
+    .dashboard-nav {
+        gap: 1rem;
+    }
+
+    .dashboard-logo-container {
+        align-self: flex-start;
+    }
+
+    .dashboard-profile {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+    }
+
+    .dashboard-main {
+        padding: 1rem;
+    }
+
+    .dashboard-footer {
+        flex-wrap: wrap;
+        gap: 1rem;
+        padding: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .dashboard-nav {
+        gap: 0.5rem;
+    }
+
+    .nav-link {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.5rem;
+    }
+
+    .dashboard-wip-box {
+        padding: 2rem 1.5rem;
+    }
+}

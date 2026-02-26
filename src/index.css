@@ -1,0 +1,7 @@
+/* index.css — entry point, imports all style modules */
+@import './styles/base.css';
+@import './styles/layout.css';
+@import './styles/login.css';
+@import './styles/dashboard.css';
+@import './styles/lang-switcher.css';
+@import './styles/screens.css';

@@ -1,0 +1,86 @@
+/* ============================================================
+   LAYOUT — login page container, header, main-content, footer
+   ============================================================ */
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    position: relative;
+    z-index: 10;
+}
+
+/* Header & Logo */
+.header {
+    margin-bottom: 3rem;
+    display: flex;
+    justify-content: center;
+}
+
+.logo-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    position: relative;
+}
+
+.logo-icon.blue {
+    color: var(--text-blue);
+    filter: drop-shadow(0 0 5px rgba(74, 144, 226, 0.5));
+}
+
+.logo-icon.red {
+    color: var(--text-red);
+    margin-left: -15px;
+    filter: drop-shadow(0 0 5px rgba(226, 74, 74, 0.5));
+}
+
+.logo-text {
+    font-size: 2.5rem;
+    margin-left: 1rem;
+    text-shadow: 2px 2px 0 #000;
+}
+
+/* Main content area */
+.main-content {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 3rem;
+}
+
+/* Login page footer tagline */
+.footer {
+    text-align: center;
+    color: var(--text-yellow);
+    font-size: 1.2rem;
+    text-shadow: 2px 2px 0 #000;
+    margin-top: auto;
+    letter-spacing: 2px;
+}
+
+@media (max-width: 600px) {
+    .logo-text {
+        font-size: 1.8rem;
+    }
+
+    .footer {
+        font-size: 0.9rem;
+    }
+
+    .container {
+        padding: 1rem;
+    }
+
+    .header {
+        margin-bottom: 1.5rem;
+    }
+
+    .main-content {
+        margin-bottom: 1.5rem;
+    }
+}
