@@ -1,22 +1,13 @@
 services:
-  frontend:
+  cooplyst:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
       - "3000:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  backend:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
     environment:
       - JWT_SECRET=${JWT_SECRET}
       - NODE_ENV=production
     volumes:
       - ./server/data:/app/data
     restart: unless-stopped
-    # Not exposed externally — nginx proxies to it on the internal network

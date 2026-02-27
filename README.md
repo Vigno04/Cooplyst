@@ -24,12 +24,11 @@ Frontend is served on `http://localhost:3000`.
 
 ## GitHub release + Docker images
 
-This repo includes workflow [docker-release.yml](.github/workflows/docker-release.yml) that builds and pushes Docker images to GHCR when a tag like `v0.1.0` is pushed.
+This repo includes workflow [docker-release.yml](.github/workflows/docker-release.yml) that builds and pushes a single Docker image to GHCR and creates a GitHub Release automatically when a tag like `v0.1.0` is pushed.
 
-Published images:
+Published image:
 
-- `ghcr.io/<owner>/cooplyst-frontend:v0.1.0`
-- `ghcr.io/<owner>/cooplyst-backend:v0.1.0`
+- `ghcr.io/<owner>/cooplyst:v0.1.0`
 
 Create release:
 
@@ -38,7 +37,8 @@ Create release:
 	- `git tag -a v0.1.0 -m "First public release"`
 3. Push branch + tag:
 	- `git push origin main --tags`
-4. Create GitHub release from tag `v0.1.0`.
+
+The workflow will build the image (amd64 + arm64) and create the GitHub Release automatically.
 
 ## Deploy on your server (compose)
 

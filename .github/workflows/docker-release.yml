@@ -7,13 +7,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_FRONTEND: ${{ github.repository_owner }}/cooplyst-frontend
-  IMAGE_BACKEND: ${{ github.repository_owner }}/cooplyst-backend
+  IMAGE: ${{ github.repository_owner }}/cooplyst
 
 jobs:
   build-and-push:
@@ -35,40 +34,54 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (frontend)
-        id: meta_frontend
+      - name: Extract metadata
+        id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
           tags: |
             type=ref,event=tag
             type=raw,value=latest
 
-      - name: Build and push frontend
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta_frontend.outputs.tags }}
-          labels: ${{ steps.meta_frontend.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Extract metadata (backend)
-        id: meta_backend
-        uses: docker/metadata-action@v5
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND }}
-          tags: |
-            type=ref,event=tag
-            type=raw,value=latest
+          name: Cooplyst ${{ github.ref_name }}
+          body: |
+            ## Cooplyst ${{ github.ref_name }}
 
-      - name: Build and push backend
-        uses: docker/build-push-action@v6
-        with:
-          context: ./server
-          file: ./server/Dockerfile
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta_backend.outputs.tags }}
-          labels: ${{ steps.meta_backend.outputs.labels }}
+            A gaming group management platform for proposing games, voting, managing runs, and sharing media.
+
+            ### Docker image
+
+            ```
+            ghcr.io/${{ github.repository_owner }}/cooplyst:${{ github.ref_name }}
+            ```
+
+            ### Deploy on your server
+
+            1. Create a `.env` file:
+               ```
+               GHCR_OWNER=${{ github.repository_owner }}
+               JWT_SECRET=<strong-random-secret>
+               ```
+            2. Pull and run:
+               ```bash
+               docker compose -f docker-compose.server.yml pull
+               docker compose -f docker-compose.server.yml up -d
+               ```
+
+            Data persists in the `cooplyst_data` Docker volume.
+          draft: false
+          prerelease: false
+
