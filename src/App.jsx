@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { languages } from './i18n';
 import ProfileScreen from './screens/ProfileScreen';
 import AdminScreen from './screens/AdminScreen';
+import DashboardScreen from './screens/DashboardScreen';
 import './index.css';
 
 // Decode JWT payload without verification (verification happens server-side)
@@ -163,8 +164,8 @@ function App() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            const data = await res.json();
-            if (!res.ok) return setAuthError(data.error || t('authError'));
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) return setAuthError(data?.error || t('authError'));
 
             localStorage.setItem(TOKEN_KEY, data.token);
             setToken(data.token);
@@ -379,11 +380,6 @@ function App() {
                         </div>
 
                         <nav className="dashboard-nav">
-                            <a href="#" className="nav-link">Lorem</a>
-                            <a href="#" className="nav-link">Ipsum</a>
-                            <a href="#" className="nav-link">Dolor</a>
-                            <a href="#" className="nav-link">Sit</a>
-                            <a href="#" className="nav-link">Amet</a>
                         </nav>
 
                         <div
@@ -418,6 +414,7 @@ function App() {
                                 currentUser={currentUser}
                                 token={token}
                                 ssoLinkStatus={ssoLinkStatus}
+                                ssoEnabled={authentikEnabled}
                                 onClose={() => { setActivePage(null); setSsoLinkStatus(null); }}
                                 onUserUpdated={(updated) => {
                                     setCurrentUser(prev => ({ ...prev, ...updated }));
@@ -429,14 +426,13 @@ function App() {
                         {activePage === 'admin' && isAdmin && (
                             <AdminScreen token={token} onClose={() => setActivePage(null)} />
                         )}
+                        {!activePage && (
+                            <DashboardScreen token={token} currentUser={currentUser} />
+                        )}
                     </main>
 
                     <footer className="dashboard-footer">
-                        <a href="#" className="footer-link">Lorem</a>
-                        <a href="#" className="footer-link">Ipsum</a>
-                        <a href="#" className="footer-link">Dolor</a>
-                        <a href="#" className="footer-link">Sit</a>
-                        <a href="#" className="footer-link">Amet</a>
+                        <p className="footer-text">{t('footer')}</p>
                     </footer>
                 </div>
             )}

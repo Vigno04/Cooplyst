@@ -20,7 +20,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 // GET /api/users/me — returns current user profile
 router.get('/me', requireAuth, (req, res) => {
     const user = db.prepare(
-        `SELECT id, username, email, role, created_at, oidc_sub, password_hash, avatar, avatar_pixelated FROM users WHERE id = ?`
+        `SELECT id, username, email, role, created_at, oidc_sub, password_hash, avatar, avatar_pixelated, language FROM users WHERE id = ?`
     ).get(req.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
     const { oidc_sub, password_hash, ...rest } = user;
@@ -29,7 +29,7 @@ router.get('/me', requireAuth, (req, res) => {
 
 // PATCH /api/users/me — update username, email, or password
 router.patch('/me', requireAuth, (req, res) => {
-    const { username, email, currentPassword, newPassword } = req.body;
+    const { username, email, currentPassword, newPassword, language } = req.body;
 
     const user = db.prepare(
         `SELECT id, username, password_hash FROM users WHERE id = ?`
@@ -65,6 +65,7 @@ router.patch('/me', requireAuth, (req, res) => {
 
     if (username !== undefined) { updates.push('username = ?'); values.push(username); }
     if (email !== undefined) { updates.push('email = ?'); values.push(email || null); }
+    if (language !== undefined) { updates.push('language = ?'); values.push(language || null); }
     if (newPassword !== undefined) {
         updates.push('password_hash = ?');
         values.push(bcrypt.hashSync(newPassword, SALT_ROUNDS));
@@ -85,7 +86,7 @@ router.patch('/me', requireAuth, (req, res) => {
     }
 
     const updated = db.prepare(
-        `SELECT id, username, email, role, oidc_sub, password_hash, avatar, avatar_pixelated FROM users WHERE id = ?`
+        `SELECT id, username, email, role, oidc_sub, password_hash, avatar, avatar_pixelated, language FROM users WHERE id = ?`
     ).get(req.user.id);
     const { oidc_sub, password_hash, ...rest } = updated;
     res.json({ ...rest, has_sso: !!oidc_sub, has_password: !!password_hash });

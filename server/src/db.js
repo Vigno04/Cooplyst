@@ -29,6 +29,83 @@ db.exec(`
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS games (
+    id                TEXT PRIMARY KEY,
+    title             TEXT NOT NULL,
+    cover_url         TEXT,
+    thumbnail_url     TEXT,
+    logo_url          TEXT,
+    backdrop_url      TEXT,
+    description       TEXT,
+    genre             TEXT,
+    release_year      INTEGER,
+    release_date      TEXT,
+    platforms         TEXT,
+    rating            REAL,
+    developer         TEXT,
+    age_rating        TEXT,
+    time_to_beat      TEXT,
+    player_counts     TEXT,
+    coop              TEXT,
+    online_offline    TEXT,
+    screenshots       TEXT,
+    videos            TEXT,
+    provider_payload  TEXT,
+    tags              TEXT,
+    website           TEXT,
+    api_id            TEXT,
+    api_provider      TEXT,
+    status            TEXT NOT NULL DEFAULT 'proposed'
+                        CHECK(status IN ('proposed','voting','backlog','playing','completed')),
+    proposed_by       TEXT NOT NULL REFERENCES users(id),
+    proposed_at       INTEGER NOT NULL DEFAULT (unixepoch()),
+    status_changed_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
+  CREATE TABLE IF NOT EXISTS votes (
+    game_id   TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    user_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vote      INTEGER NOT NULL CHECK(vote IN (0, 1)),
+    voted_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (game_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS game_players (
+    game_id    TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    added_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (game_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS game_runs (
+    id           TEXT PRIMARY KEY,
+    game_id      TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    run_number   INTEGER NOT NULL DEFAULT 1,
+    name         TEXT,
+    started_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+    completed_at INTEGER,
+    UNIQUE(game_id, run_number)
+  );
+
+  CREATE TABLE IF NOT EXISTS ratings (
+    run_id   TEXT NOT NULL REFERENCES game_runs(id) ON DELETE CASCADE,
+    user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    score    INTEGER NOT NULL CHECK(score >= 1 AND score <= 10),
+    comment  TEXT,
+    rated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (run_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS media (
+    id          TEXT PRIMARY KEY,
+    game_id     TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    run_id      TEXT REFERENCES game_runs(id) ON DELETE SET NULL,
+    uploaded_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    filename    TEXT NOT NULL,
+    mime_type   TEXT NOT NULL,
+    uploaded_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
 `);
 
 // Migration: add oidc_sub column for existing DBs.
@@ -53,6 +130,32 @@ if (!userCols.includes('avatar_pixelated')) {
   db.exec('ALTER TABLE users ADD COLUMN avatar_pixelated INTEGER NOT NULL DEFAULT 0');
 }
 
+// Migration: add extra game metadata columns (backdrop, rating, developer, tags, website)
+const gameCols = db.prepare('PRAGMA table_info(games)').all().map(c => c.name);
+if (!gameCols.includes('backdrop_url')) db.exec('ALTER TABLE games ADD COLUMN backdrop_url TEXT');
+if (!gameCols.includes('thumbnail_url')) db.exec('ALTER TABLE games ADD COLUMN thumbnail_url TEXT');
+if (!gameCols.includes('logo_url'))      db.exec('ALTER TABLE games ADD COLUMN logo_url TEXT');
+if (!gameCols.includes('rating'))       db.exec('ALTER TABLE games ADD COLUMN rating REAL');
+if (!gameCols.includes('developer'))    db.exec('ALTER TABLE games ADD COLUMN developer TEXT');
+if (!gameCols.includes('release_date')) db.exec('ALTER TABLE games ADD COLUMN release_date TEXT');
+if (!gameCols.includes('age_rating'))   db.exec('ALTER TABLE games ADD COLUMN age_rating TEXT');
+if (!gameCols.includes('time_to_beat')) db.exec('ALTER TABLE games ADD COLUMN time_to_beat TEXT');
+if (!gameCols.includes('player_counts')) db.exec('ALTER TABLE games ADD COLUMN player_counts TEXT');
+if (!gameCols.includes('coop'))         db.exec('ALTER TABLE games ADD COLUMN coop TEXT');
+if (!gameCols.includes('online_offline')) db.exec('ALTER TABLE games ADD COLUMN online_offline TEXT');
+if (!gameCols.includes('screenshots'))  db.exec('ALTER TABLE games ADD COLUMN screenshots TEXT');
+if (!gameCols.includes('videos'))       db.exec('ALTER TABLE games ADD COLUMN videos TEXT');
+if (!gameCols.includes('provider_payload')) db.exec('ALTER TABLE games ADD COLUMN provider_payload TEXT');
+
+// Migration: add optional run name column
+const runCols = db.prepare('PRAGMA table_info(game_runs)').all().map(c => c.name);
+if (!runCols.includes('name')) db.exec('ALTER TABLE game_runs ADD COLUMN name TEXT');
+
+// Migration: add language preference to users
+if (!userCols.includes('language')) db.exec('ALTER TABLE users ADD COLUMN language TEXT');
+if (!gameCols.includes('tags'))         db.exec('ALTER TABLE games ADD COLUMN tags TEXT');
+if (!gameCols.includes('website'))      db.exec('ALTER TABLE games ADD COLUMN website TEXT');
+
 // Make password_hash nullable on existing DBs (SQLite can't ALTER COLUMN, so we
 // use a pragma trick: the column was originally NOT NULL, but that constraint is
 // not enforced by SQLite when the schema is re-read via CREATE TABLE IF NOT EXISTS.
@@ -70,5 +173,8 @@ seedSetting.run('authentik_client_id', '');
 seedSetting.run('authentik_client_secret', '');
 seedSetting.run('local_auth_enabled', 'true');
 seedSetting.run('authentik_auto_redirect', 'false');
+seedSetting.run('vote_threshold', '3');
+seedSetting.run('vote_visibility', 'public');
+seedSetting.run('game_api_providers', '[]');
 
 module.exports = db;

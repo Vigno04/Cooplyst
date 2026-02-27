@@ -19,6 +19,7 @@
     transition: all 0.2s;
     cursor: pointer;
     user-select: none;
+    max-width: calc(100vw - 1rem);
 }
 
 .lang-switcher-container:hover {
@@ -37,6 +38,7 @@
     font-family: var(--font-retro);
     font-size: 0.8rem;
     text-transform: uppercase;
+    white-space: nowrap;
 }
 
 /* Dropdown arrow — rotates 180° when open */
@@ -52,6 +54,8 @@
 /* Options panel */
 .lang-dropdown {
     position: absolute;
+    min-width: calc(100% + 8px);
+    max-width: min(240px, calc(100vw - 1rem));
     top: calc(100% + 10px);
     right: -4px;
     background: var(--panel-bg);
@@ -61,7 +65,13 @@
     box-shadow:
         0 0 15px rgba(74, 144, 226, 0.6),
         inset 0 0 10px rgba(74, 144, 226, 0.4);
-    min-width: calc(100% + 8px);
+}
+
+@media (max-width: 600px) {
+    .lang-switcher-container {
+        border-width: 3px;
+        gap: 0.35rem;
+    }
 }
 
 .lang-option {

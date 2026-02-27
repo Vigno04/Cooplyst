@@ -11,11 +11,13 @@ const db = require('./db');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../data');
 const AVATARS_DIR = path.join(DATA_DIR, 'avatars');
+const MEDIA_DIR = path.join(DATA_DIR, 'media');
 if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
+if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
 
-// ── First-boot: create admin account if it does not exist ──────────────────
+// ── First-boot: create admin account if no admin-role user exists ──────────
 function bootstrapAdmin() {
-    const existing = db.prepare(`SELECT id FROM users WHERE username = 'admin'`).get();
+    const existing = db.prepare(`SELECT id FROM users WHERE role = 'admin' LIMIT 1`).get();
     if (existing) return;
 
     // Generate a cryptographically random 32-char hex token
@@ -42,6 +44,9 @@ bootstrapAdmin();
 
 // ── Express setup ──────────────────────────────────────────────────────────
 const app = express();
+
+// Running behind nginx/reverse proxy in docker-compose
+app.set('trust proxy', 1);
 
 // Security headers
 app.use(helmet());
@@ -71,15 +76,18 @@ app.use('/api', limiter);
 
 // ── Static avatar files ────────────────────────────────────────────────────
 app.use('/api/avatars', express.static(AVATARS_DIR));
+app.use('/api/media', express.static(MEDIA_DIR));
 
 // ── Routes ─────────────────────────────────────────────────────────────────
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const adminRoutes = require('./routes/admin');
+const gameRoutes = require('./routes/games');
 
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/games', gameRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));

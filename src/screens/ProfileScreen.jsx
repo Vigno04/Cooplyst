@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Save, Lock, User, Mail, AlertCircle, CheckCircle, X, ShieldCheck, ShieldOff, Loader2, Upload, Trash2 } from 'lucide-react';
+import { Save, Lock, User, Mail, AlertCircle, CheckCircle, X, ShieldCheck, ShieldOff, Loader2, Upload, Trash2, Globe } from 'lucide-react';
+import { languages } from '../i18n';
 
-export default function ProfileScreen({ currentUser, token, onUserUpdated, onClose, ssoLinkStatus }) {
+export default function ProfileScreen({ currentUser, token, onUserUpdated, onClose, ssoLinkStatus, ssoEnabled }) {
     const { t } = useTranslation();
     const [username, setUsername] = useState(currentUser.username);
     const [email, setEmail] = useState(currentUser.email || '');
@@ -23,6 +24,9 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
     const [avatarUploading, setAvatarUploading] = useState(false);
     const fileInputRef = useRef(null);
 
+    // Language preference
+    const [language, setLanguage] = useState('');
+
     // Fetch current SSO status from server (not in JWT)
     useEffect(() => {
         fetch('/api/users/me', { headers: { 'Authorization': `Bearer ${token}` } })
@@ -32,6 +36,7 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
                 setHasPassword(!!data.has_password);
                 setAvatar(data.avatar || null);
                 setAvatarPixelated(data.avatar_pixelated || 0);
+                setLanguage(data.language || '');
             })
             .catch(() => setHasSso(false));
     }, [token]);
@@ -56,6 +61,7 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
         if (username !== currentUser.username) body.username = username;
         if (email !== (currentUser.email || '')) body.email = email;
         if (newPassword) { body.currentPassword = currentPassword; body.newPassword = newPassword; }
+        if (language !== (currentUser.language || '')) body.language = language;
 
         if (Object.keys(body).length === 0) {
             return setStatus({ type: 'error', msg: t('profileNoChanges') });
@@ -244,6 +250,22 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
                         </div>
                     </div>
 
+                    <div className="screen-divider">{t('profileLanguage')}</div>
+                    <div className="input-group">
+                        <label><Globe size={12} /> {t('profileLanguage')}</label>
+                        <select
+                            className="admin-text-input"
+                            value={language}
+                            onChange={e => setLanguage(e.target.value)}
+                            style={{ fontFamily: 'inherit', cursor: 'pointer' }}
+                        >
+                            <option value="">{t('profileLanguageDefault')}</option>
+                            {languages.map(l => (
+                                <option key={l.code} value={l.code}>{l.code.toUpperCase()}</option>
+                            ))}
+                        </select>
+                    </div>
+
                     <div className="screen-divider">{t('usernameLabel')}</div>
                     <div className="input-group">
                         <label><User size={12} /> {t('usernameLabel')}</label>
@@ -276,6 +298,7 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
                 </form>
 
                 {/* ── SSO linking section ──────────────────────────────────── */}
+                {ssoEnabled && <>
                 <div className="screen-divider">{t('profileSsoSection')}</div>
                 <div className="profile-sso-row">
                     <div className="profile-sso-status">
@@ -313,6 +336,7 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
                 {hasSso === true && !hasPassword && (
                     <p className="profile-sso-warn">{t('profileSsoUnlinkDisabled')}</p>
                 )}
+                </>}
             </div>
         </div>
     );

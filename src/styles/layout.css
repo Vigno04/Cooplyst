@@ -4,6 +4,7 @@
 
 .container {
     max-width: 800px;
+    width: 100%;
     margin: 0 auto;
     padding: 2rem;
     display: flex;
@@ -68,12 +69,23 @@
         font-size: 1.8rem;
     }
 
+    .logo-icon {
+        width: 32px;
+        height: 32px;
+    }
+
+    .logo-container {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
     .footer {
         font-size: 0.9rem;
     }
 
     .container {
         padding: 1rem;
+        padding-top: 4.5rem;
     }
 
     .header {

@@ -2,6 +2,7 @@ const express = require('express');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const db = require('../db');
 const { Issuer, generators } = require('openid-client');
+const { testSmtp, testDiscord } = require('../notifications');
 
 const router = express.Router();
 
@@ -18,6 +19,21 @@ const ALLOWED_SETTINGS = [
     'local_auth_enabled',
     'authentik_auto_redirect',
     'authentik_auto_register',
+    'vote_threshold',
+    'vote_visibility',
+    'game_api_providers',
+    'notify_on_propose_channels',
+    'smtp_enabled',
+    'smtp_host',
+    'smtp_port',
+    'smtp_secure',
+    'smtp_user',
+    'smtp_pass',
+    'smtp_from',
+    'smtp_to',
+    'discord_enabled',
+    'discord_webhook_url',
+    'discord_language',
 ];
 
 // GET /api/admin/settings
@@ -176,6 +192,28 @@ router.delete('/users/:id', (req, res) => {
 
     db.prepare(`DELETE FROM users WHERE id = ?`).run(targetUserId);
     res.json({ ok: true });
+});
+
+// ── Notification test endpoints ─────────────────────────────────────────────
+
+// POST /api/admin/test-smtp
+router.post('/test-smtp', async (req, res) => {
+    try {
+        const result = await testSmtp();
+        res.json(result);
+    } catch (err) {
+        res.json({ ok: false, detail: err.message });
+    }
+});
+
+// POST /api/admin/test-discord
+router.post('/test-discord', async (req, res) => {
+    try {
+        const result = await testDiscord();
+        res.json(result);
+    } catch (err) {
+        res.json({ ok: false, detail: err.message });
+    }
 });
 
 module.exports = router;

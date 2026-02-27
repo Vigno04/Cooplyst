@@ -186,10 +186,22 @@ router.get('/oidc/callback', async (req, res) => {
         // Find or create local user record linked to this SSO identity
         let user = db.prepare(`SELECT id, username, email, role FROM users WHERE oidc_sub = ?`).get(sub);
 
+        if (user) {
+            // Update email from SSO claims if changed
+            if (email && user.email !== email) {
+                db.prepare(`UPDATE users SET email = ? WHERE id = ?`).run(email, user.id);
+                user.email = email;
+            }
+        }
+
         if (!user) {
             // Try to match by email if provided
             if (email) {
                 user = db.prepare(`SELECT id, username, email, role FROM users WHERE email = ?`).get(email);
+            }
+            // Try to match by username as a last resort
+            if (!user) {
+                user = db.prepare(`SELECT id, username, email, role FROM users WHERE username = ?`).get(username);
             }
             if (user) {
                 // Link this existing account to the SSO identity

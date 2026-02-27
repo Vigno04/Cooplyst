@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings, AlertCircle, CheckCircle, Save, X, ShieldCheck, ChevronDown, BookOpen, FlaskConical, Loader2 } from 'lucide-react';
+import { Settings, AlertCircle, CheckCircle, Save, X, ShieldCheck, ChevronDown, BookOpen, FlaskConical, Loader2, Gamepad2, ArrowUp, ArrowDown, Plus, Trash2, Bell, Mail, MessageSquare } from 'lucide-react';
 
 export default function AdminScreen({ token, onClose }) {
     const { t } = useTranslation();
@@ -10,7 +10,17 @@ export default function AdminScreen({ token, onClose }) {
     const [loading, setLoading] = useState(false);
 
     // Tab state
-    const [activeTab, setActiveTab] = useState('general'); // 'general' | 'info' | 'users'
+    const [activeTab, setActiveTab] = useState('general'); // 'general' | 'games' | 'notifications' | 'info' | 'users'
+    const [providerTestResults, setProviderTestResults] = useState({});
+    const [providerTesting, setProviderTesting] = useState({});
+
+    // Notification test state
+    const [smtpTesting, setSmtpTesting] = useState(false);
+    const [smtpTestResult, setSmtpTestResult] = useState(null);
+    const [discordTesting, setDiscordTesting] = useState(false);
+    const [discordTestResult, setDiscordTestResult] = useState(null);
+    const [smtpOpen, setSmtpOpen] = useState(false);
+    const [discordOpen, setDiscordOpen] = useState(false);
 
     // Accordion state
     const [ssoOpen, setSsoOpen] = useState(false);
@@ -60,7 +70,47 @@ export default function AdminScreen({ token, onClose }) {
     const isDirty = pending && savedSettings &&
         JSON.stringify(pending) !== JSON.stringify(savedSettings);
 
+    // Shared save logic — returns true on success
+    const doSave = async () => {
+        setLoading(true);
+        setStatus(null);
+        try {
+            const res = await fetch('/api/admin/settings', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(pending),
+            });
+            const data = await res.json();
+            if (!res.ok) { setStatus({ type: 'error', msg: data.error }); return false; }
+            setSavedSettings(data);
+            setPending(data);
+            setStatus({ type: 'success', msg: t('adminSettingsSaved') });
+            return true;
+        } catch {
+            setStatus({ type: 'error', msg: t('networkError') });
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleTestSso = async () => {
+        // Validate required fields before attempting
+        if (!pending?.authentik_url?.trim() || !pending?.authentik_client_id?.trim() || !pending?.authentik_client_secret?.trim()) {
+            setSsoTestResult({
+                ok: false, steps: {
+                    config: { ok: false, detail: t('adminTestMissingFields') },
+                    discovery: { ok: false, detail: '' },
+                    client: { ok: false, detail: '' },
+                }
+            });
+            return;
+        }
+        // Auto-save unsaved changes first
+        if (isDirty) {
+            const saved = await doSave();
+            if (!saved) return;
+        }
         setSsoTesting(true);
         setSsoTestResult(null);
         try {
@@ -84,23 +134,48 @@ export default function AdminScreen({ token, onClose }) {
 
     const handleSave = async () => {
         if (!isDirty) return;
-        setLoading(true);
-        setStatus(null);
+        await doSave();
+    };
+
+    const handleTestSmtp = async () => {
+        if (isDirty) {
+            const saved = await doSave();
+            if (!saved) return;
+        }
+        setSmtpTesting(true);
+        setSmtpTestResult(null);
         try {
-            const res = await fetch('/api/admin/settings', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(pending),
+            const res = await fetch('/api/admin/test-smtp', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
             });
             const data = await res.json();
-            if (!res.ok) return setStatus({ type: 'error', msg: data.error });
-            setSavedSettings(data);
-            setPending(data);
-            setStatus({ type: 'success', msg: t('adminSettingsSaved') });
+            setSmtpTestResult(data);
         } catch {
-            setStatus({ type: 'error', msg: t('networkError') });
+            setSmtpTestResult({ ok: false, detail: t('networkError') });
         } finally {
-            setLoading(false);
+            setSmtpTesting(false);
+        }
+    };
+
+    const handleTestDiscord = async () => {
+        if (isDirty) {
+            const saved = await doSave();
+            if (!saved) return;
+        }
+        setDiscordTesting(true);
+        setDiscordTestResult(null);
+        try {
+            const res = await fetch('/api/admin/test-discord', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const data = await res.json();
+            setDiscordTestResult(data);
+        } catch {
+            setDiscordTestResult({ ok: false, detail: t('networkError') });
+        } finally {
+            setDiscordTesting(false);
         }
     };
 
@@ -143,6 +218,66 @@ export default function AdminScreen({ token, onClose }) {
 
     const ssoEnabled = pending?.authentik_enabled === 'true';
 
+    // ── Provider helpers ────────────────────────────────────────────────────
+    const getProviders = () => {
+        try { return JSON.parse(pending?.game_api_providers || '[]'); }
+        catch { return []; }
+    };
+    const setProviders = (list) => setText('game_api_providers', JSON.stringify(list));
+
+    const addProvider = () => {
+        const list = getProviders();
+        list.push({ type: 'rawg', api_key: '', enabled: true, priority: list.length + 1 });
+        setProviders(list);
+    };
+    const removeProvider = (idx) => {
+        const list = getProviders().filter((_, i) => i !== idx);
+        list.forEach((p, i) => p.priority = i + 1);
+        setProviders(list);
+    };
+    const updateProvider = (idx, key, val) => {
+        const list = getProviders();
+        list[idx] = { ...list[idx], [key]: val };
+        setProviders(list);
+    };
+    const moveProvider = (idx, dir) => {
+        const list = getProviders();
+        const newIdx = idx + dir;
+        if (newIdx < 0 || newIdx >= list.length) return;
+        [list[idx], list[newIdx]] = [list[newIdx], list[idx]];
+        list.forEach((p, i) => p.priority = i + 1);
+        setProviders(list);
+    };
+    const handleTestProvider = async (idx) => {
+        const p = getProviders()[idx];
+        // Validate required fields
+        const missing = (p.type === 'rawg' && !p.api_key?.trim()) ||
+            (p.type === 'igdb' && (!p.client_id?.trim() || !p.client_secret?.trim()));
+        if (missing) {
+            setProviderTestResults(prev => ({ ...prev, [idx]: { ok: false, detail: t('adminTestMissingFields') } }));
+            return;
+        }
+        // Auto-save unsaved changes first
+        if (isDirty) {
+            const saved = await doSave();
+            if (!saved) return;
+        }
+        setProviderTesting(prev => ({ ...prev, [idx]: true }));
+        try {
+            const res = await fetch('/api/games/search/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(p),
+            });
+            const data = await res.json();
+            setProviderTestResults(prev => ({ ...prev, [idx]: data }));
+        } catch {
+            setProviderTestResults(prev => ({ ...prev, [idx]: { ok: false, detail: t('networkError') } }));
+        } finally {
+            setProviderTesting(prev => ({ ...prev, [idx]: false }));
+        }
+    };
+
     return (
         <div className="dashboard-wip" onClick={onClose}>
             <div className="screen-box" onClick={e => e.stopPropagation()}>
@@ -176,6 +311,18 @@ export default function AdminScreen({ token, onClose }) {
                                 onClick={() => setActiveTab('info')}
                             >
                                 {t('adminTabInfo')}
+                            </button>
+                            <button
+                                className={`admin-tab-btn ${activeTab === 'games' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('games')}
+                            >
+                                {t('adminTabGames')}
+                            </button>
+                            <button
+                                className={`admin-tab-btn ${activeTab === 'notifications' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('notifications')}
+                            >
+                                {t('adminTabNotifications')}
                             </button>
                             <button
                                 className={`admin-tab-btn ${activeTab === 'users' ? 'active' : ''}`}
@@ -477,10 +624,404 @@ export default function AdminScreen({ token, onClose }) {
                             </>
                         )}
 
+                        {activeTab === 'games' && (
+                            <>
+                                <div className="admin-settings-list">
+                                    {/* Vote Threshold */}
+                                    <div className="admin-setting-row admin-setting-row--text">
+                                        <div className="admin-setting-info">
+                                            <label className="admin-setting-label" htmlFor="vote-threshold">
+                                                {t('adminVoteThreshold')}
+                                            </label>
+                                            <div className="admin-setting-desc">{t('adminVoteThresholdDesc')}</div>
+                                        </div>
+                                        <input
+                                            id="vote-threshold"
+                                            type="number"
+                                            min="1"
+                                            max="100"
+                                            className="admin-text-input admin-number-input"
+                                            value={pending.vote_threshold || '3'}
+                                            onChange={e => setText('vote_threshold', e.target.value)}
+                                        />
+                                    </div>
+
+                                    {/* Vote Visibility */}
+                                    <div className="admin-setting-row">
+                                        <div className="admin-setting-info">
+                                            <div className="admin-setting-label">{t('adminVoteVisibility')}</div>
+                                            <div className="admin-setting-desc">{t('adminVoteVisibilityDesc')}</div>
+                                        </div>
+                                        <button
+                                            className={`toggle-btn ${pending.vote_visibility === 'public' ? 'on' : 'off'}`}
+                                            onClick={() => setText('vote_visibility', pending.vote_visibility === 'public' ? 'anonymous' : 'public')}
+                                        >
+                                            {pending.vote_visibility === 'public' ? t('votePublic') : t('voteAnonymous')}
+                                        </button>
+                                    </div>
+
+                                    {/* Game API Providers */}
+                                    <div className="admin-providers-section">
+                                        <div className="admin-setting-label" style={{ marginBottom: '0.5rem' }}>
+                                            <Gamepad2 size={14} /> {t('adminApiProviders')}
+                                        </div>
+                                        <div className="admin-setting-desc" style={{ marginBottom: '0.75rem' }}>
+                                            {t('adminApiProvidersDesc')}
+                                        </div>
+
+                                        {getProviders().map((p, idx) => (
+                                            <div key={idx} className="provider-card">
+                                                <div className="provider-card-header">
+                                                    <select
+                                                        className="provider-type-select"
+                                                        value={p.type}
+                                                        onChange={e => {
+                                                            const newType = e.target.value;
+                                                            const newP = { type: newType, enabled: p.enabled, priority: p.priority };
+                                                            if (newType === 'rawg') newP.api_key = '';
+                                                            else if (newType === 'igdb') { newP.client_id = ''; newP.client_secret = ''; }
+                                                            const list = getProviders();
+                                                            list[idx] = newP;
+                                                            setProviders(list);
+                                                        }}
+                                                    >
+                                                        <option value="rawg">RAWG</option>
+                                                        <option value="igdb">IGDB</option>
+                                                    </select>
+                                                    <div className="provider-card-actions">
+                                                        <button className="btn-icon" onClick={() => moveProvider(idx, -1)} disabled={idx === 0}>
+                                                            <ArrowUp size={14} />
+                                                        </button>
+                                                        <button className="btn-icon" onClick={() => moveProvider(idx, 1)} disabled={idx === getProviders().length - 1}>
+                                                            <ArrowDown size={14} />
+                                                        </button>
+                                                        <button
+                                                            className={`toggle-btn toggle-btn--sm ${p.enabled ? 'on' : 'off'}`}
+                                                            onClick={() => updateProvider(idx, 'enabled', !p.enabled)}
+                                                        >
+                                                            {p.enabled ? t('toggleOn') : t('toggleOff')}
+                                                        </button>
+                                                        <button className="btn-icon btn-icon--danger" onClick={() => removeProvider(idx)}>
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {p.type === 'rawg' && (
+                                                    <>
+                                                        <input
+                                                            type="text"
+                                                            className="admin-text-input"
+                                                            placeholder="RAWG API Key"
+                                                            value={p.api_key || ''}
+                                                            onChange={e => updateProvider(idx, 'api_key', e.target.value)}
+                                                        />
+                                                        <div className="provider-link-row">
+                                                            <a
+                                                                href="https://rawg.io/apidocs"
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="provider-get-key-link"
+                                                            >
+                                                                🔗 Get RAWG API Key
+                                                            </a>
+                                                        </div>
+                                                    </>
+                                                )}
+                                                {p.type === 'igdb' && (
+                                                    <>
+                                                        <input
+                                                            type="text"
+                                                            className="admin-text-input"
+                                                            placeholder="Twitch Client ID"
+                                                            value={p.client_id || ''}
+                                                            onChange={e => updateProvider(idx, 'client_id', e.target.value)}
+                                                        />
+                                                        <input
+                                                            type="password"
+                                                            className="admin-text-input"
+                                                            placeholder="Twitch Client Secret"
+                                                            value={p.client_secret || ''}
+                                                            onChange={e => updateProvider(idx, 'client_secret', e.target.value)}
+                                                            style={{ marginTop: '0.35rem' }}
+                                                        />
+                                                        <div className="provider-link-row">
+                                                            <a
+                                                                href="https://api-docs.igdb.com/"
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="provider-get-key-link"
+                                                            >
+                                                                🔗 Get IGDB API Credentials
+                                                            </a>
+                                                        </div>
+                                                    </>
+                                                )}
+
+                                                <button
+                                                    className="btn btn-sm btn-outline"
+                                                    onClick={() => handleTestProvider(idx)}
+                                                    disabled={providerTesting[idx]}
+                                                    style={{ marginTop: '0.4rem' }}
+                                                >
+                                                    {providerTesting[idx]
+                                                        ? <><Loader2 size={13} className="spin" /> {t('adminSsoTesting')}</>
+                                                        : <><FlaskConical size={13} /> {t('adminSsoTestBtn')}</>}
+                                                </button>
+                                                {providerTestResults[idx] && (
+                                                    <div className={`provider-test-result ${providerTestResults[idx].ok ? 'ok' : 'fail'}`}>
+                                                        {providerTestResults[idx].ok
+                                                            ? <><CheckCircle size={13} /> {providerTestResults[idx].detail}</>
+                                                            : <><AlertCircle size={13} /> {providerTestResults[idx].detail}</>}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+
+                                        <button className="btn btn-sm btn-outline" onClick={addProvider} style={{ marginTop: '0.5rem' }}>
+                                            <Plus size={14} /> {t('adminAddProvider')}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleSave}
+                                    disabled={loading || !isDirty}
+                                >
+                                    <Save size={16} />
+                                    {loading ? t('saving') : t('adminSaveBtn')}
+                                </button>
+                            </>
+                        )}
+
                         {activeTab === 'info' && (
                             <div className="admin-tab-content">
                                 <p className="dashboard-wip-text">{t('adminInfoPlaceholder')}</p>
                             </div>
+                        )}
+
+                        {activeTab === 'notifications' && (
+                            <>
+                                <div className="admin-settings-list">
+
+                                    {/* ── Channel picker ──────────────────────────────── */}
+                                    <div className="admin-setting-row admin-setting-row--text">
+                                        <div className="admin-setting-info">
+                                            <div className="admin-setting-label"><Bell size={13} /> {t('adminNotifyOnPropose')}</div>
+                                            <div className="admin-setting-desc">{t('adminNotifyOnProposeDesc')}</div>
+                                        </div>
+                                        <div className="admin-channel-picker">
+                                            {['off', 'smtp', 'discord', 'both'].map(opt => (
+                                                <button
+                                                    key={opt}
+                                                    className={`admin-channel-btn ${(pending.notify_on_propose_channels || 'off') === opt ? 'active' : ''}`}
+                                                    onClick={() => setText('notify_on_propose_channels', opt)}
+                                                >
+                                                    {t(`notifChannel_${opt}`)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* ── SMTP accordion ──────────────────────────────── */}
+                                    <div className="admin-accordion">
+                                        <button
+                                            className="admin-accordion-header"
+                                            onClick={() => setSmtpOpen(o => !o)}
+                                            aria-expanded={smtpOpen}
+                                        >
+                                            <span className="admin-accordion-title">
+                                                <Mail size={14} />
+                                                {t('adminSmtpSection')}
+                                                {(pending.notify_on_propose_channels === 'smtp' || pending.notify_on_propose_channels === 'both') && <span className="admin-accordion-badge">{t('toggleOn')}</span>}
+                                            </span>
+                                            <ChevronDown size={14} className={`admin-accordion-arrow ${smtpOpen ? 'open' : ''}`} />
+                                        </button>
+
+                                        {smtpOpen && (
+                                            <div className="admin-accordion-body">
+                                                <div className="admin-setting-row admin-setting-row--text">
+                                                    <div className="admin-setting-info">
+                                                        <label className="admin-setting-label" htmlFor="smtp-host">{t('adminSmtpHost')}</label>
+                                                    </div>
+                                                    <input id="smtp-host" type="text" className="admin-text-input"
+                                                        value={pending.smtp_host || ''}
+                                                        placeholder="smtp.example.com"
+                                                        onChange={e => setText('smtp_host', e.target.value)} />
+                                                </div>
+
+                                                <div className="admin-setting-row admin-setting-row--text">
+                                                    <div className="admin-setting-info">
+                                                        <label className="admin-setting-label" htmlFor="smtp-port">{t('adminSmtpPort')}</label>
+                                                    </div>
+                                                    <input id="smtp-port" type="number" className="admin-text-input admin-number-input"
+                                                        value={pending.smtp_port || '587'}
+                                                        onChange={e => setText('smtp_port', e.target.value)} />
+                                                </div>
+
+                                                <div className="admin-setting-row">
+                                                    <div className="admin-setting-info">
+                                                        <div className="admin-setting-label">{t('adminSmtpSecure')}</div>
+                                                        <div className="admin-setting-desc">{t('adminSmtpSecureDesc')}</div>
+                                                    </div>
+                                                    <button
+                                                        className={`toggle-btn ${pending.smtp_secure === 'true' ? 'on' : 'off'}`}
+                                                        onClick={() => toggle('smtp_secure')}
+                                                    >
+                                                        {pending.smtp_secure === 'true' ? t('toggleOn') : t('toggleOff')}
+                                                    </button>
+                                                </div>
+
+                                                <div className="admin-setting-row admin-setting-row--text">
+                                                    <div className="admin-setting-info">
+                                                        <label className="admin-setting-label" htmlFor="smtp-user">{t('adminSmtpUser')}</label>
+                                                    </div>
+                                                    <input id="smtp-user" type="text" className="admin-text-input"
+                                                        value={pending.smtp_user || ''}
+                                                        placeholder="user@example.com"
+                                                        onChange={e => setText('smtp_user', e.target.value)} />
+                                                </div>
+
+                                                <div className="admin-setting-row admin-setting-row--text">
+                                                    <div className="admin-setting-info">
+                                                        <label className="admin-setting-label" htmlFor="smtp-pass">{t('adminSmtpPass')}</label>
+                                                    </div>
+                                                    <input id="smtp-pass" type="password" className="admin-text-input"
+                                                        value={pending.smtp_pass || ''}
+                                                        placeholder="••••••••••••"
+                                                        onChange={e => setText('smtp_pass', e.target.value)} />
+                                                </div>
+
+                                                <div className="admin-setting-row admin-setting-row--text">
+                                                    <div className="admin-setting-info">
+                                                        <label className="admin-setting-label" htmlFor="smtp-from">{t('adminSmtpFrom')}</label>
+                                                        <div className="admin-setting-desc">{t('adminSmtpFromDesc')}</div>
+                                                    </div>
+                                                    <input id="smtp-from" type="email" className="admin-text-input"
+                                                        value={pending.smtp_from || ''}
+                                                        placeholder="noreply@example.com"
+                                                        onChange={e => setText('smtp_from', e.target.value)} />
+                                                </div>
+
+                                                <div className="admin-setting-row admin-setting-row--text">
+                                                    <div className="admin-setting-info">
+                                                        <label className="admin-setting-label" htmlFor="smtp-to">{t('adminSmtpTo')}</label>
+                                                        <div className="admin-setting-desc">{t('adminSmtpToDesc')}</div>
+                                                    </div>
+                                                    <input id="smtp-to" type="text" className="admin-text-input"
+                                                        value={pending.smtp_to || ''}
+                                                        placeholder="admin@example.com, other@example.com"
+                                                        onChange={e => setText('smtp_to', e.target.value)} />
+                                                </div>
+
+                                                <div className="admin-setting-row admin-setting-row--text">
+                                                    <div className="admin-setting-info">
+                                                        <div className="admin-setting-label">{t('adminSmtpTest')}</div>
+                                                        <div className="admin-setting-desc">{t('adminSmtpTestDesc')}</div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-secondary btn-test-sso"
+                                                        onClick={handleTestSmtp}
+                                                        disabled={smtpTesting}
+                                                    >
+                                                        {smtpTesting ? <Loader2 size={14} className="spin" /> : <FlaskConical size={14} />}
+                                                        {smtpTesting ? t('adminSsoTesting') : t('adminSsoTestBtn')}
+                                                    </button>
+                                                </div>
+                                                {smtpTestResult && (
+                                                    <div className={`provider-test-result ${smtpTestResult.ok ? 'ok' : 'fail'}`}>
+                                                        {smtpTestResult.ok
+                                                            ? <><CheckCircle size={13} /> {smtpTestResult.detail}</>  
+                                                            : <><AlertCircle size={13} /> {smtpTestResult.detail}</>}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* ── Discord accordion ──────────────────────────── */}
+                                    <div className="admin-accordion">
+                                        <button
+                                            className="admin-accordion-header"
+                                            onClick={() => setDiscordOpen(o => !o)}
+                                            aria-expanded={discordOpen}
+                                        >
+                                            <span className="admin-accordion-title">
+                                                <MessageSquare size={14} />
+                                                {t('adminDiscordSection')}
+                                                {(pending.notify_on_propose_channels === 'discord' || pending.notify_on_propose_channels === 'both') && <span className="admin-accordion-badge">{t('toggleOn')}</span>}
+                                            </span>
+                                            <ChevronDown size={14} className={`admin-accordion-arrow ${discordOpen ? 'open' : ''}`} />
+                                        </button>
+
+                                        {discordOpen && (
+                                            <div className="admin-accordion-body">
+                                                <div className="admin-setting-row admin-setting-row--text">
+                                                    <div className="admin-setting-info">
+                                                        <label className="admin-setting-label" htmlFor="discord-webhook">{t('adminDiscordWebhook')}</label>
+                                                        <div className="admin-setting-desc">{t('adminDiscordWebhookDesc')}</div>
+                                                    </div>
+                                                    <input id="discord-webhook" type="url" className="admin-text-input"
+                                                        value={pending.discord_webhook_url || ''}
+                                                        placeholder="https://discord.com/api/webhooks/..."
+                                                        onChange={e => setText('discord_webhook_url', e.target.value)} />
+                                                </div>
+
+                                                <div className="admin-setting-row admin-setting-row--text">
+                                                    <div className="admin-setting-info">
+                                                        <label className="admin-setting-label" htmlFor="discord-lang">{t('adminDiscordLanguage')}</label>
+                                                        <div className="admin-setting-desc">{t('adminDiscordLanguageDesc')}</div>
+                                                    </div>
+                                                    <select
+                                                        id="discord-lang"
+                                                        className="provider-type-select"
+                                                        value={pending.discord_language || 'en'}
+                                                        onChange={e => setText('discord_language', e.target.value)}
+                                                    >
+                                                        <option value="en">English</option>
+                                                        <option value="it">Italiano</option>
+                                                    </select>
+                                                </div>
+
+                                                <div className="admin-setting-row admin-setting-row--text">
+                                                    <div className="admin-setting-info">
+                                                        <div className="admin-setting-label">{t('adminDiscordTest')}</div>
+                                                        <div className="admin-setting-desc">{t('adminDiscordTestDesc')}</div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-secondary btn-test-sso"
+                                                        onClick={handleTestDiscord}
+                                                        disabled={discordTesting}
+                                                    >
+                                                        {discordTesting ? <Loader2 size={14} className="spin" /> : <FlaskConical size={14} />}
+                                                        {discordTesting ? t('adminSsoTesting') : t('adminSsoTestBtn')}
+                                                    </button>
+                                                </div>
+                                                {discordTestResult && (
+                                                    <div className={`provider-test-result ${discordTestResult.ok ? 'ok' : 'fail'}`}>
+                                                        {discordTestResult.ok
+                                                            ? <><CheckCircle size={13} /> {discordTestResult.detail}</>
+                                                            : <><AlertCircle size={13} /> {discordTestResult.detail}</>}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                </div>
+
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleSave}
+                                    disabled={loading || !isDirty}
+                                >
+                                    <Save size={16} />
+                                    {loading ? t('saving') : t('adminSaveBtn')}
+                                </button>
+                            </>
                         )}
 
                         {activeTab === 'users' && (
@@ -511,7 +1052,7 @@ export default function AdminScreen({ token, onClose }) {
                                                                 {u.role.toUpperCase()}
                                                             </span>
                                                         </td>
-                                                        <td>{new Date(u.joined).toLocaleDateString()}</td>
+                                                        <td>{new Date(u.joined * 1000).toLocaleDateString()}</td>
                                                         <td>
                                                             {u.has_sso ? (
                                                                 <CheckCircle size={14} className="text-primary" />

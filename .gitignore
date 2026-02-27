@@ -8,9 +8,15 @@ dist/
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
 
 # SQLite data
 data/
+server/data/
+*.db
+*.sqlite
+*.sqlite3
 
 # Logs
 *.log
