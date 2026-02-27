@@ -1,6 +1,6 @@
 services:
   cooplyst:
-    image: ghcr.io/${GHCR_OWNER}/cooplyst:v0.1.0
+    image: ghcr.io/vigno04/cooplyst:v0.1.0
     ports:
       - "3000:80"
     environment:

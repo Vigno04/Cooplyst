@@ -88,17 +88,19 @@
 
 .screen-alert.error {
     border-color: var(--text-red);
-    color: var(--text-red);
+    color: var(--text-primary);
     background: rgba(226, 74, 74, 0.1);
 }
 
 /* Auth error on login form */
 .auth-error {
     font-size: 0.7rem;
-    color: var(--text-red);
+    color: var(--text-primary);
     background: rgba(226, 74, 74, 0.1);
     border: 2px solid var(--text-red);
     padding: 0.7rem 1rem;
+    line-height: 1.5;
+    white-space: pre-line;
 }
 
 /* Admin settings */
@@ -216,6 +218,34 @@
 
 .admin-text-input::placeholder {
     color: rgba(255, 255, 255, 0.2);
+}
+
+.password-field {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.password-field input {
+    padding-right: 2.6rem;
+}
+
+.password-toggle-btn {
+    position: absolute;
+    right: 0.65rem;
+    background: transparent;
+    border: none;
+    color: var(--text-blue);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.password-toggle-btn:hover {
+    color: var(--text-primary);
 }
 
 /* ── Admin Accordions ─────────────────────────────────────── */
@@ -619,6 +649,55 @@
     padding: 2rem;
 }
 
+.admin-info-grid {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.admin-info-card {
+    border: 2px solid rgba(74, 144, 226, 0.3);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+.admin-info-card .admin-section-divider {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    margin-bottom: 0.35rem;
+}
+
+.admin-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 0.35rem;
+    font-size: 0.7rem;
+}
+
+.admin-info-row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.admin-info-row span {
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.admin-info-row strong {
+    color: var(--text-primary);
+    font-size: 0.72rem;
+    text-align: right;
+    word-break: break-word;
+}
+
 
 
 /* ── Profile Avatar ──────────────────────────────────────────── */
@@ -831,6 +910,10 @@
 
     .admin-tab-content {
         padding: 0.75rem;
+    }
+
+    .admin-info-grid {
+        grid-template-columns: 1fr;
     }
 
     .admin-accordion-body {
@@ -1210,11 +1293,13 @@
 
 .modal-error {
     font-size: 0.7rem;
-    color: var(--text-red);
+    color: var(--text-primary);
     padding: 0.5rem;
     border: 1px solid var(--text-red);
     background: rgba(226, 74, 74, 0.1);
     margin-bottom: 0.75rem;
+    line-height: 1.5;
+    white-space: pre-line;
 }
 
 /* ── Propose Modal ───────────────────────────────────────────── */
@@ -2659,6 +2744,19 @@
 
     .admin-tab-content {
         padding: 0.5rem;
+    }
+
+    .admin-info-card {
+        padding: 0.6rem;
+    }
+
+    .admin-info-row {
+        font-size: 0.62rem;
+        gap: 0.6rem;
+    }
+
+    .admin-info-row strong {
+        font-size: 0.64rem;
     }
 
     .admin-setting-label {

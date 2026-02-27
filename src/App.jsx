@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Gamepad2, LogIn, MonitorPlay, Globe, User, ChevronDown, Loader2 } from 'lucide-react';
+import { Gamepad2, LogIn, MonitorPlay, Globe, User, ChevronDown, Loader2, Eye, EyeOff } from 'lucide-react';
 import authentikLogo from './assets/authentik_pixellogo.png';
+import cooplystLogo from './assets/cooplyst-icon.png';
 import { useTranslation } from 'react-i18next';
 import { languages } from './i18n';
 import ProfileScreen from './screens/ProfileScreen';
@@ -35,6 +36,8 @@ function App() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [authError, setAuthError] = useState('');
     const [authLoading, setAuthLoading] = useState(false);
 
@@ -76,6 +79,7 @@ function App() {
         fetch('/api/users/me', { headers: { 'Authorization': `Bearer ${token}` } })
             .then(r => r.json())
             .then(data => {
+                setCurrentUser(prev => ({ ...prev, ...data }));
                 setUserAvatar(data.avatar || null);
                 setUserAvatarPixelated(data.avatar_pixelated || 0);
             })
@@ -148,6 +152,11 @@ function App() {
         e.preventDefault();
         setAuthError('');
 
+        const toAuthMessage = (value) => {
+            const message = typeof value === 'string' ? value.trim() : '';
+            return message || t('authError');
+        };
+
         if (showRegister && password !== confirmPassword) {
             return setAuthError(t('passwordMismatch'));
         }
@@ -165,7 +174,7 @@ function App() {
                 body: JSON.stringify(body),
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) return setAuthError(data?.error || t('authError'));
+            if (!res.ok) return setAuthError(toAuthMessage(data?.error));
 
             localStorage.setItem(TOKEN_KEY, data.token);
             setToken(data.token);
@@ -236,8 +245,7 @@ function App() {
                     <div className="container">
                         <header className="header">
                             <div className="logo-container">
-                                <Gamepad2 className="logo-icon blue" size={40} />
-                                <Gamepad2 className="logo-icon red" size={40} />
+                                <img src={cooplystLogo} alt="CoopLyst" className="logo-img" />
                                 <h1 className="logo-text">
                                     <span className="text-blue">Coop</span><span className="text-red">Lyst</span>
                                 </h1>
@@ -319,13 +327,33 @@ function App() {
 
                                                     <div className="input-group">
                                                         <label>{t('passwordLabel')}</label>
-                                                        <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
+                                                        <div className="password-field">
+                                                            <input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
+                                                            <button
+                                                                type="button"
+                                                                className="password-toggle-btn"
+                                                                onClick={() => setShowPassword(v => !v)}
+                                                                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                                            >
+                                                                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                                                            </button>
+                                                        </div>
                                                     </div>
 
                                                     {showRegister && (
                                                         <div className="input-group">
                                                             <label>{t('confirmPasswordLabel')}</label>
-                                                            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="••••••••" required />
+                                                            <div className="password-field">
+                                                                <input type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="••••••••" required />
+                                                                <button
+                                                                    type="button"
+                                                                    className="password-toggle-btn"
+                                                                    onClick={() => setShowConfirmPassword(v => !v)}
+                                                                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                                                                >
+                                                                    {showConfirmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     )}
 
@@ -372,8 +400,7 @@ function App() {
                 <div className="dashboard-layout">
                     <header className="dashboard-header">
                         <div className="dashboard-logo-container">
-                            <Gamepad2 className="logo-icon blue" size={32} />
-                            <Gamepad2 className="logo-icon red" size={32} />
+                            <img src={cooplystLogo} alt="CoopLyst" className="dashboard-logo-img" />
                             <h1 className="dashboard-logo-text">
                                 <span className="text-blue">Coop</span><span className="text-red">Lyst</span>
                             </h1>

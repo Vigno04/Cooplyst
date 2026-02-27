@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Save, Lock, User, Mail, AlertCircle, CheckCircle, X, ShieldCheck, ShieldOff, Loader2, Upload, Trash2, Globe } from 'lucide-react';
+import { Save, Lock, User, Mail, AlertCircle, CheckCircle, X, ShieldCheck, ShieldOff, Loader2, Upload, Trash2, Globe, Eye, EyeOff } from 'lucide-react';
 import { languages } from '../i18n';
 
 export default function ProfileScreen({ currentUser, token, onUserUpdated, onClose, ssoLinkStatus, ssoEnabled }) {
@@ -10,6 +10,9 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
     const [currentPassword, setCurrentPw] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPw] = useState('');
+    const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [status, setStatus] = useState(ssoLinkStatus || null); // { type: 'success'|'error', msg }
     const [loading, setLoading] = useState(false);
 
@@ -32,6 +35,8 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
         fetch('/api/users/me', { headers: { 'Authorization': `Bearer ${token}` } })
             .then(r => r.json())
             .then(data => {
+                setUsername(data.username || '');
+                setEmail(data.email || '');
                 setHasSso(!!data.has_sso);
                 setHasPassword(!!data.has_password);
                 setAvatar(data.avatar || null);
@@ -40,6 +45,12 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
             })
             .catch(() => setHasSso(false));
     }, [token]);
+
+    useEffect(() => {
+        setUsername(currentUser.username || '');
+        setEmail(currentUser.email || '');
+        setLanguage(currentUser.language || '');
+    }, [currentUser]);
 
     // Show incoming SSO link status from redirect
     useEffect(() => {
@@ -280,15 +291,45 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
 
                     <div className="input-group">
                         <label><Lock size={12} /> {t('currentPasswordLabel')}</label>
-                        <input value={currentPassword} onChange={e => setCurrentPw(e.target.value)} type="password" placeholder="••••••••" />
+                        <div className="password-field">
+                            <input value={currentPassword} onChange={e => setCurrentPw(e.target.value)} type={showCurrentPassword ? 'text' : 'password'} placeholder="••••••••" />
+                            <button
+                                type="button"
+                                className="password-toggle-btn"
+                                onClick={() => setShowCurrentPassword(v => !v)}
+                                aria-label={showCurrentPassword ? 'Hide password' : 'Show password'}
+                            >
+                                {showCurrentPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                        </div>
                     </div>
                     <div className="input-group">
                         <label><Lock size={12} /> {t('newPasswordLabel')}</label>
-                        <input value={newPassword} onChange={e => setNewPassword(e.target.value)} type="password" placeholder="••••••••" />
+                        <div className="password-field">
+                            <input value={newPassword} onChange={e => setNewPassword(e.target.value)} type={showNewPassword ? 'text' : 'password'} placeholder="••••••••" />
+                            <button
+                                type="button"
+                                className="password-toggle-btn"
+                                onClick={() => setShowNewPassword(v => !v)}
+                                aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                            >
+                                {showNewPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                        </div>
                     </div>
                     <div className="input-group">
                         <label><Lock size={12} /> {t('confirmPasswordLabel')}</label>
-                        <input value={confirmPassword} onChange={e => setConfirmPw(e.target.value)} type="password" placeholder="••••••••" />
+                        <div className="password-field">
+                            <input value={confirmPassword} onChange={e => setConfirmPw(e.target.value)} type={showConfirmPassword ? 'text' : 'password'} placeholder="••••••••" />
+                            <button
+                                type="button"
+                                className="password-toggle-btn"
+                                onClick={() => setShowConfirmPassword(v => !v)}
+                                aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                            >
+                                {showConfirmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                        </div>
                     </div>
 
                     <button type="submit" className="btn btn-primary" disabled={loading}>

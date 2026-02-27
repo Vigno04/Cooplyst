@@ -1,10 +1,25 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const db = require('../db');
 const { Issuer, generators } = require('openid-client');
 const { testSmtp, testDiscord } = require('../notifications');
 
 const router = express.Router();
+
+const SERVER_PACKAGE_JSON_PATH = path.join(__dirname, '../../package.json');
+const CLIENT_PACKAGE_JSON_PATH = path.join(__dirname, '../../../package.json');
+
+function readPackageVersion(filePath, fallback = 'unknown') {
+    try {
+        const raw = fs.readFileSync(filePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        return parsed?.version || fallback;
+    } catch {
+        return fallback;
+    }
+}
 
 // All admin routes require a valid JWT AND admin role
 router.use(requireAuth, requireAdmin);
@@ -63,6 +78,56 @@ router.patch('/settings', (req, res) => {
 
     const rows = db.prepare(`SELECT key, value FROM settings`).all();
     res.json(Object.fromEntries(rows.map(r => [r.key, r.value])));
+});
+
+// GET /api/admin/info
+router.get('/info', (req, res) => {
+    const uptimeSeconds = Math.floor(process.uptime());
+    const startedAtIso = new Date(Date.now() - uptimeSeconds * 1000).toISOString();
+
+    const usersTotal = db.prepare(`SELECT COUNT(*) as count FROM users`).get()?.count || 0;
+    const usersAdmins = db.prepare(`SELECT COUNT(*) as count FROM users WHERE role = 'admin'`).get()?.count || 0;
+    const usersWithSso = db.prepare(`SELECT COUNT(*) as count FROM users WHERE oidc_sub IS NOT NULL`).get()?.count || 0;
+    const usersWithEmail = db.prepare(`SELECT COUNT(*) as count FROM users WHERE email IS NOT NULL AND TRIM(email) != ''`).get()?.count || 0;
+
+    const gamesTotal = db.prepare(`SELECT COUNT(*) as count FROM games`).get()?.count || 0;
+    const gamesProposed = db.prepare(`SELECT COUNT(*) as count FROM games WHERE status = 'proposed'`).get()?.count || 0;
+    const gamesVoting = db.prepare(`SELECT COUNT(*) as count FROM games WHERE status = 'voting'`).get()?.count || 0;
+    const gamesBacklog = db.prepare(`SELECT COUNT(*) as count FROM games WHERE status = 'backlog'`).get()?.count || 0;
+    const gamesPlaying = db.prepare(`SELECT COUNT(*) as count FROM games WHERE status = 'playing'`).get()?.count || 0;
+    const gamesCompleted = db.prepare(`SELECT COUNT(*) as count FROM games WHERE status = 'completed'`).get()?.count || 0;
+
+    const runsTotal = db.prepare(`SELECT COUNT(*) as count FROM game_runs`).get()?.count || 0;
+    const ratingsTotal = db.prepare(`SELECT COUNT(*) as count FROM ratings`).get()?.count || 0;
+    const mediaTotal = db.prepare(`SELECT COUNT(*) as count FROM media`).get()?.count || 0;
+
+    res.json({
+        app: {
+            version: readPackageVersion(SERVER_PACKAGE_JSON_PATH),
+            node_version: process.version,
+            environment: process.env.NODE_ENV || 'development',
+            platform: process.platform,
+            arch: process.arch,
+            uptime_seconds: uptimeSeconds,
+            started_at: startedAtIso,
+            generated_at: new Date().toISOString(),
+        },
+        counts: {
+            users_total: usersTotal,
+            users_admins: usersAdmins,
+            users_with_sso: usersWithSso,
+            users_with_email: usersWithEmail,
+            games_total: gamesTotal,
+            games_proposed: gamesProposed,
+            games_voting: gamesVoting,
+            games_backlog: gamesBacklog,
+            games_playing: gamesPlaying,
+            games_completed: gamesCompleted,
+            runs_total: runsTotal,
+            ratings_total: ratingsTotal,
+            media_total: mediaTotal,
+        },
+    });
 });
 
 // GET /api/admin/test-sso — verify OIDC discovery & client credentials

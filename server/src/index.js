@@ -77,6 +77,8 @@ app.use('/api', limiter);
 // ── Static avatar files ────────────────────────────────────────────────────
 app.use('/api/avatars', express.static(AVATARS_DIR));
 app.use('/api/media', express.static(MEDIA_DIR));
+// Serve frontend assets (logo/favicon) so emails can reference them by absolute URL
+app.use('/assets', express.static(path.join(__dirname, '../assets')));
 
 // ── Routes ─────────────────────────────────────────────────────────────────
 const authRoutes = require('./routes/auth');

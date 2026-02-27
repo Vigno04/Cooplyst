@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings, AlertCircle, CheckCircle, Save, X, ShieldCheck, ChevronDown, BookOpen, FlaskConical, Loader2, Gamepad2, ArrowUp, ArrowDown, Plus, Trash2, Bell, Mail, MessageSquare } from 'lucide-react';
+import { Settings, AlertCircle, CheckCircle, Save, X, ShieldCheck, ChevronDown, BookOpen, FlaskConical, Loader2, Gamepad2, ArrowUp, ArrowDown, Plus, Trash2, Bell, Mail, MessageSquare, Eye, EyeOff } from 'lucide-react';
 
 export default function AdminScreen({ token, onClose }) {
     const { t } = useTranslation();
@@ -21,6 +21,9 @@ export default function AdminScreen({ token, onClose }) {
     const [discordTestResult, setDiscordTestResult] = useState(null);
     const [smtpOpen, setSmtpOpen] = useState(false);
     const [discordOpen, setDiscordOpen] = useState(false);
+    const [showSsoClientSecret, setShowSsoClientSecret] = useState(false);
+    const [showSmtpPassword, setShowSmtpPassword] = useState(false);
+    const [showProviderSecret, setShowProviderSecret] = useState({});
 
     // Accordion state
     const [ssoOpen, setSsoOpen] = useState(false);
@@ -32,6 +35,11 @@ export default function AdminScreen({ token, onClose }) {
     const [users, setUsers] = useState(null);
     const [loadingUsers, setLoadingUsers] = useState(false);
     const [errorUsers, setErrorUsers] = useState(null);
+
+    // Info tab state
+    const [adminInfo, setAdminInfo] = useState(null);
+    const [loadingInfo, setLoadingInfo] = useState(false);
+    const [errorInfo, setErrorInfo] = useState(null);
 
     useEffect(() => {
         fetch('/api/admin/settings', {
@@ -54,6 +62,18 @@ export default function AdminScreen({ token, onClose }) {
         }
     }, [activeTab, token, t, users]);
 
+    useEffect(() => {
+        if (activeTab === 'info' && !adminInfo) {
+            setLoadingInfo(true);
+            setErrorInfo(null);
+            fetch('/api/admin/info', { headers: { 'Authorization': `Bearer ${token}` } })
+                .then(r => r.json())
+                .then(data => setAdminInfo(data))
+                .catch(() => setErrorInfo(t('networkError')))
+                .finally(() => setLoadingInfo(false));
+        }
+    }, [activeTab, token, t, adminInfo]);
+
     const toggle = (key) => {
         setPending(prev => ({
             ...prev,
@@ -69,6 +89,27 @@ export default function AdminScreen({ token, onClose }) {
 
     const isDirty = pending && savedSettings &&
         JSON.stringify(pending) !== JSON.stringify(savedSettings);
+
+    const formatDateTime = (isoString) => {
+        if (!isoString) return '—';
+        const d = new Date(isoString);
+        if (Number.isNaN(d.getTime())) return '—';
+        return d.toLocaleString();
+    };
+
+    const formatUptime = (seconds) => {
+        if (!Number.isFinite(seconds)) return '—';
+        const days = Math.floor(seconds / 86400);
+        const hours = Math.floor((seconds % 86400) / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        const parts = [];
+        if (days) parts.push(`${days}d`);
+        if (hours || days) parts.push(`${hours}h`);
+        if (minutes || hours || days) parts.push(`${minutes}m`);
+        parts.push(`${secs}s`);
+        return parts.join(' ');
+    };
 
     // Shared save logic — returns true on success
     const doSave = async () => {
@@ -471,14 +512,24 @@ export default function AdminScreen({ token, onClose }) {
                                                                     {t('adminSsoClientSecret')}
                                                                 </label>
                                                             </div>
-                                                            <input
-                                                                id="sso-client-secret"
-                                                                type="password"
-                                                                className="admin-text-input"
-                                                                value={pending.authentik_client_secret || ''}
-                                                                placeholder="••••••••••••"
-                                                                onChange={e => setText('authentik_client_secret', e.target.value)}
-                                                            />
+                                                            <div className="password-field">
+                                                                <input
+                                                                    id="sso-client-secret"
+                                                                    type={showSsoClientSecret ? 'text' : 'password'}
+                                                                    className="admin-text-input"
+                                                                    value={pending.authentik_client_secret || ''}
+                                                                    placeholder="••••••••••••"
+                                                                    onChange={e => setText('authentik_client_secret', e.target.value)}
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    className="password-toggle-btn"
+                                                                    onClick={() => setShowSsoClientSecret(v => !v)}
+                                                                    aria-label={showSsoClientSecret ? 'Hide password' : 'Show password'}
+                                                                >
+                                                                    {showSsoClientSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+                                                                </button>
+                                                            </div>
                                                         </div>
 
                                                         {/* Test Connection */}
@@ -737,14 +788,23 @@ export default function AdminScreen({ token, onClose }) {
                                                             value={p.client_id || ''}
                                                             onChange={e => updateProvider(idx, 'client_id', e.target.value)}
                                                         />
-                                                        <input
-                                                            type="password"
-                                                            className="admin-text-input"
-                                                            placeholder="Twitch Client Secret"
-                                                            value={p.client_secret || ''}
-                                                            onChange={e => updateProvider(idx, 'client_secret', e.target.value)}
-                                                            style={{ marginTop: '0.35rem' }}
-                                                        />
+                                                        <div className="password-field" style={{ marginTop: '0.35rem' }}>
+                                                            <input
+                                                                type={showProviderSecret[idx] ? 'text' : 'password'}
+                                                                className="admin-text-input"
+                                                                placeholder="Twitch Client Secret"
+                                                                value={p.client_secret || ''}
+                                                                onChange={e => updateProvider(idx, 'client_secret', e.target.value)}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                className="password-toggle-btn"
+                                                                onClick={() => setShowProviderSecret(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                                                                aria-label={showProviderSecret[idx] ? 'Hide password' : 'Show password'}
+                                                            >
+                                                                {showProviderSecret[idx] ? <EyeOff size={14} /> : <Eye size={14} />}
+                                                            </button>
+                                                        </div>
                                                         <div className="provider-link-row">
                                                             <a
                                                                 href="https://api-docs.igdb.com/"
@@ -797,7 +857,47 @@ export default function AdminScreen({ token, onClose }) {
 
                         {activeTab === 'info' && (
                             <div className="admin-tab-content">
-                                <p className="dashboard-wip-text">{t('adminInfoPlaceholder')}</p>
+                                {loadingInfo && <p className="dashboard-wip-text">{t('loading')}</p>}
+                                {!loadingInfo && errorInfo && <p className="dashboard-wip-text">{errorInfo}</p>}
+                                {!loadingInfo && !errorInfo && adminInfo && (
+                                    <div className="admin-info-grid">
+                                        <div className="admin-info-card">
+                                            <div className="admin-section-divider">{t('adminInfoSectionApp')}</div>
+                                            <div className="admin-info-row"><span>{t('adminInfoVersion')}</span><strong>{adminInfo.app?.version || '—'}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoNodeVersion')}</span><strong>{adminInfo.app?.node_version || '—'}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoEnvironment')}</span><strong>{adminInfo.app?.environment || '—'}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoPlatform')}</span><strong>{`${adminInfo.app?.platform || '—'} / ${adminInfo.app?.arch || '—'}`}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoUptime')}</span><strong>{formatUptime(adminInfo.app?.uptime_seconds)}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoStartedAt')}</span><strong>{formatDateTime(adminInfo.app?.started_at)}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoGeneratedAt')}</span><strong>{formatDateTime(adminInfo.app?.generated_at)}</strong></div>
+                                        </div>
+
+                                        <div className="admin-info-card">
+                                            <div className="admin-section-divider">{t('adminInfoSectionUsers')}</div>
+                                            <div className="admin-info-row"><span>{t('adminInfoUsersTotal')}</span><strong>{adminInfo.counts?.users_total ?? 0}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoUsersAdmins')}</span><strong>{adminInfo.counts?.users_admins ?? 0}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoUsersSso')}</span><strong>{adminInfo.counts?.users_with_sso ?? 0}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoUsersEmail')}</span><strong>{adminInfo.counts?.users_with_email ?? 0}</strong></div>
+                                        </div>
+
+                                        <div className="admin-info-card">
+                                            <div className="admin-section-divider">{t('adminInfoSectionGames')}</div>
+                                            <div className="admin-info-row"><span>{t('adminInfoGamesTotal')}</span><strong>{adminInfo.counts?.games_total ?? 0}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoGamesProposed')}</span><strong>{adminInfo.counts?.games_proposed ?? 0}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoGamesVoting')}</span><strong>{adminInfo.counts?.games_voting ?? 0}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoGamesBacklog')}</span><strong>{adminInfo.counts?.games_backlog ?? 0}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoGamesPlaying')}</span><strong>{adminInfo.counts?.games_playing ?? 0}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoGamesCompleted')}</span><strong>{adminInfo.counts?.games_completed ?? 0}</strong></div>
+                                        </div>
+
+                                        <div className="admin-info-card">
+                                            <div className="admin-section-divider">{t('adminInfoSectionActivity')}</div>
+                                            <div className="admin-info-row"><span>{t('adminInfoRunsTotal')}</span><strong>{adminInfo.counts?.runs_total ?? 0}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoRatingsTotal')}</span><strong>{adminInfo.counts?.ratings_total ?? 0}</strong></div>
+                                            <div className="admin-info-row"><span>{t('adminInfoMediaTotal')}</span><strong>{adminInfo.counts?.media_total ?? 0}</strong></div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -887,10 +987,20 @@ export default function AdminScreen({ token, onClose }) {
                                                     <div className="admin-setting-info">
                                                         <label className="admin-setting-label" htmlFor="smtp-pass">{t('adminSmtpPass')}</label>
                                                     </div>
-                                                    <input id="smtp-pass" type="password" className="admin-text-input"
-                                                        value={pending.smtp_pass || ''}
-                                                        placeholder="••••••••••••"
-                                                        onChange={e => setText('smtp_pass', e.target.value)} />
+                                                    <div className="password-field">
+                                                        <input id="smtp-pass" type={showSmtpPassword ? 'text' : 'password'} className="admin-text-input"
+                                                            value={pending.smtp_pass || ''}
+                                                            placeholder="••••••••••••"
+                                                            onChange={e => setText('smtp_pass', e.target.value)} />
+                                                        <button
+                                                            type="button"
+                                                            className="password-toggle-btn"
+                                                            onClick={() => setShowSmtpPassword(v => !v)}
+                                                            aria-label={showSmtpPassword ? 'Hide password' : 'Show password'}
+                                                        >
+                                                            {showSmtpPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                                                        </button>
+                                                    </div>
                                                 </div>
 
                                                 <div className="admin-setting-row admin-setting-row--text">

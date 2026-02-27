@@ -9,6 +9,8 @@
  */
 
 const db = require('./db');
+const fs = require('fs');
+const path = require('path');
 
 function getSetting(key) {
     return db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value ?? null;
@@ -84,7 +86,7 @@ const TRANSLATIONS = {
  * Build a styled HTML email matching the CoopLyst platform look.
  * Falls back gracefully in email clients that strip styles.
  */
-function buildEmailHtml({ preheader, headline, bodyLines, ctaUrl, ctaLabel, footerNote, disclaimer, coverImageUrl }) {
+function buildEmailHtml({ preheader, headline, bodyLines, ctaUrl, ctaLabel, footerNote, disclaimer, coverImageUrl, logoImageUrl }) {
     const esc = (s) => String(s)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -132,16 +134,17 @@ function buildEmailHtml({ preheader, headline, bodyLines, ctaUrl, ctaLabel, foot
         <table width="600" cellpadding="0" cellspacing="0" border="0"
                style="max-width:600px;background-color:#0d1528;border:2px solid #4a90e2;border-radius:4px;">
 
-          <!-- Header bar -->
-          <tr>
-            <td style="background:linear-gradient(90deg,#0d1b3e 0%,#1a2f5e 100%);
-                       border-bottom:2px solid #4a90e2;padding:22px 40px;text-align:center;">
-              <span style="font-family:'Courier New',Courier,monospace;font-size:22px;
-                           font-weight:bold;letter-spacing:3px;text-shadow:2px 2px 0 #000;">
-                <span style="color:#4a90e2;">Coop</span><span style="color:#e24a4a;">Lyst</span>
-              </span>
-            </td>
-          </tr>
+                    <!-- Header bar -->
+                    <tr>
+                        <td style="background:linear-gradient(90deg,#0d1b3e 0%,#1a2f5e 100%);
+                                             border-bottom:2px solid #4a90e2;padding:22px 40px;text-align:center;">
+                            ${logoImageUrl ? `<img src="${esc(logoImageUrl)}" alt="CoopLyst" width="120" style="display:block;margin:0 auto 8px;border-radius:4px;" />` : ''}
+                            <span style="font-family:'Courier New',Courier,monospace;font-size:22px;
+                                                     font-weight:bold;letter-spacing:3px;text-shadow:2px 2px 0 #000;">
+                                <span style="color:#4a90e2;">Coop</span><span style="color:#e24a4a;">Lyst</span>
+                            </span>
+                        </td>
+                    </tr>
 
           <!-- Divider -->
           <tr>
@@ -201,13 +204,34 @@ function buildEmailHtml({ preheader, headline, bodyLines, ctaUrl, ctaLabel, foot
 </html>`;
 }
 
+function getAssetDataUri(filename) {
+    try {
+        const assetPath = path.join(__dirname, '../assets', filename);
+        if (!fs.existsSync(assetPath)) return null;
+        const buf = fs.readFileSync(assetPath);
+        const ext = path.extname(filename).slice(1) || 'png';
+        return `data:image/${ext};base64,${buf.toString('base64')}`;
+    } catch {
+        return null;
+    }
+}
+
+function getAssetPath(filename) {
+    try {
+        const assetPath = path.join(__dirname, '../assets', filename);
+        return fs.existsSync(assetPath) ? assetPath : null;
+    } catch {
+        return null;
+    }
+}
+
 // ── SMTP low-level send ──────────────────────────────────────────────────────
 
 /**
- * @param {{ to: string[], subject: string, html: string, text: string }} opts
+ * @param {{ to: string[], subject: string, html: string, text: string, attachments?: any[] }} opts
  * `to` is explicit — callers decide the recipient list.
  */
-async function sendSmtpEmail({ to, subject, html, text }) {
+async function sendSmtpEmail({ to, subject, html, text, attachments }) {
     let nodemailer;
     try {
         nodemailer = require('nodemailer');
@@ -238,7 +262,7 @@ async function sendSmtpEmail({ to, subject, html, text }) {
     });
 
     try {
-        await transporter.sendMail({ from, to, subject, html, text });
+        await transporter.sendMail({ from, to, subject, html, text, attachments: attachments || [] });
         return { ok: true, detail: `Email sent to ${to.length} recipient(s)` };
     } catch (err) {
         return { ok: false, detail: err.message };
@@ -318,6 +342,9 @@ async function notifyGameProposed(game, siteUrl) {
                 const tr = TRANSLATIONS[lang] || TRANSLATIONS.en;
                 const subject = tr.gameProposedSubject(game.title);
                 const bodyLines = tr.gameProposedBody(game.proposedByUsername, game.title);
+                const embeddedLogo = getAssetDataUri('cooplyst-icon.png');
+                const logoPath = getAssetPath('cooplyst-icon.png');
+                const logoCid = 'cooplyst-logo@cooplyst';
                 const html = buildEmailHtml({
                     preheader: bodyLines[0],
                     headline: tr.gameProposedHeadline,
@@ -327,9 +354,11 @@ async function notifyGameProposed(game, siteUrl) {
                     footerNote: tr.footer,
                     disclaimer: tr.disclaimer,
                     coverImageUrl,
+                    logoImageUrl: logoPath ? `cid:${logoCid}` : (embeddedLogo || (base ? `${base}/email-assets/cooplyst-icon.png` : null)),
                 });
                 const text = `${bodyLines.filter(Boolean).join(' ')}${gameUrl ? `\n\n${tr.gameProposedCta}: ${gameUrl}` : ''}`;
-                const r = await sendSmtpEmail({ to: emails, subject, html, text });
+                const attachments = logoPath ? [{ filename: 'cooplyst-icon.png', path: logoPath, cid: logoCid }] : [];
+                const r = await sendSmtpEmail({ to: emails, subject, html, text, attachments });
                 if (!r.ok) console.warn(`[COOPLYST] SMTP notification failed (${lang}):`, r.detail);
                 smtpResults.push(r);
             }
@@ -374,6 +403,11 @@ async function testSmtp() {
     if (to.length === 0) return { ok: false, detail: 'No test recipient configured in the Notifications settings' };
 
     const tr = TRANSLATIONS.en;
+    const site = getSetting('site_url') || '';
+    const base = site ? site.replace(/\/$/, '') : '';
+    const embeddedLogo = getAssetDataUri('cooplyst-icon.png');
+    const logoPath = getAssetPath('cooplyst-icon.png');
+    const logoCid = 'cooplyst-logo@cooplyst';
     const html = buildEmailHtml({
         preheader: 'CoopLyst SMTP test — everything is working!',
         headline: tr.testHeadline,
@@ -382,6 +416,7 @@ async function testSmtp() {
         ctaLabel: null,
         footerNote: tr.footer,
         disclaimer: tr.disclaimer,
+        logoImageUrl: logoPath ? `cid:${logoCid}` : (embeddedLogo || (base ? `${base}/email-assets/cooplyst-icon.png` : null)),
     });
 
     return sendSmtpEmail({
@@ -389,6 +424,7 @@ async function testSmtp() {
         subject: '✅ CoopLyst — SMTP test',
         html,
         text: 'This is a test email from CoopLyst. SMTP is working correctly!',
+        attachments: logoPath ? [{ filename: 'cooplyst-icon.png', path: logoPath, cid: logoCid }] : [],
     });
 }
 

@@ -16,6 +16,9 @@ COPY server/package*.json ./
 RUN npm install --omit=dev
 COPY server/src/ ./src/
 
+# Copy assets for backend to serve
+COPY src/assets ./assets/
+
 # Copy built frontend
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 
