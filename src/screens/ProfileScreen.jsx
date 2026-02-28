@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Save, Lock, User, Mail, AlertCircle, CheckCircle, X, ShieldCheck, ShieldOff, Loader2, Upload, Trash2, Globe, Eye, EyeOff } from 'lucide-react';
 import { languages } from '../i18n';
+import { uploadWithProgress } from '../uploadWithProgress';
 
 export default function ProfileScreen({ currentUser, token, onUserUpdated, onClose, ssoLinkStatus, ssoEnabled }) {
     const { t } = useTranslation();
@@ -25,6 +26,8 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
     const [avatar, setAvatar] = useState(null);
     const [avatarPixelated, setAvatarPixelated] = useState(0);
     const [avatarUploading, setAvatarUploading] = useState(false);
+    const [avatarUploadProgress, setAvatarUploadProgress] = useState(0);
+    const avatarUploadAbortRef = useRef(null);
     const fileInputRef = useRef(null);
 
     // Language preference
@@ -130,28 +133,44 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
         const file = e.target.files?.[0];
         if (!file) return;
         setAvatarUploading(true);
+        setAvatarUploadProgress(0);
         const formData = new FormData();
         formData.append('avatar', file);
         try {
-            const res = await fetch('/api/users/me/avatar', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData,
+            const res = await uploadWithProgress({
+                url: '/api/users/me/avatar',
+                token,
+                formData,
+                onProgress: (pct) => setAvatarUploadProgress(pct),
+                onAbortReady: (abortFn) => {
+                    avatarUploadAbortRef.current = abortFn;
+                },
             });
-            const data = await res.json();
+            const data = res.data || {};
             if (res.ok) {
                 setAvatar(data.avatar);
                 setAvatarPixelated(data.avatar_pixelated);
                 onUserUpdated({ avatar: data.avatar, avatar_pixelated: data.avatar_pixelated });
             } else {
-                setStatus({ type: 'error', msg: data.error });
+                setStatus({ type: 'error', msg: data.error || t('uploadFailed') });
             }
-        } catch {
-            setStatus({ type: 'error', msg: t('networkError') });
+        } catch (err) {
+            if (err.message === 'ABORTED') return;
+            setStatus({
+                type: 'error',
+                msg: err.message === 'UPLOAD_TIMEOUT' ? t('uploadTimeout') : t('networkError'),
+            });
         } finally {
             setAvatarUploading(false);
+            setAvatarUploadProgress(0);
+            avatarUploadAbortRef.current = null;
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
+    };
+
+    const handleCancelAvatarUpload = () => {
+        if (!avatarUploading || !avatarUploadAbortRef.current) return;
+        avatarUploadAbortRef.current();
     };
 
     const handleTogglePixelate = async () => {
@@ -257,6 +276,27 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
                                         {t('profileAvatarRemove')}
                                     </button>
                                 </>
+                            )}
+                            {avatarUploading && (
+                                <div className="upload-progress-card">
+                                    <div className="upload-progress-meta">
+                                        <span>{t('uploadInProgress')}</span>
+                                        <div className="upload-progress-actions">
+                                            <span>{avatarUploadProgress}%</span>
+                                            <button
+                                                type="button"
+                                                className="upload-progress-cancel"
+                                                onClick={handleCancelAvatarUpload}
+                                                aria-label="Cancel upload"
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="upload-progress-track">
+                                        <div className="upload-progress-fill" style={{ width: `${avatarUploadProgress}%` }} />
+                                    </div>
+                                </div>
                             )}
                         </div>
                     </div>

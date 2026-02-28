@@ -739,6 +739,75 @@
     gap: 0.5rem;
 }
 
+.upload-progress-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    margin-bottom: 0.65rem;
+}
+
+.upload-progress-card {
+    border: 1px solid rgba(74, 144, 226, 0.25);
+    background: rgba(0, 0, 0, 0.28);
+    padding: 0.4rem 0.5rem;
+}
+
+.upload-progress-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.66rem;
+    margin-bottom: 0.25rem;
+}
+
+.upload-progress-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.upload-progress-cancel {
+    border: 1px solid rgba(226, 74, 74, 0.45);
+    background: rgba(0, 0, 0, 0.45);
+    color: var(--text-red);
+    padding: 0.15rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.upload-progress-cancel:hover {
+    border-color: var(--text-red);
+    background: rgba(226, 74, 74, 0.12);
+}
+
+.upload-progress-meta span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.upload-progress-track {
+    width: 100%;
+    height: 7px;
+    border: 1px solid rgba(74, 144, 226, 0.32);
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.upload-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--text-blue), var(--text-green));
+    transition: width 0.12s linear;
+}
+
+.upload-progress-error {
+    margin-top: 0.3rem;
+    font-size: 0.64rem;
+    color: var(--text-red);
+}
+
 .btn-sm {
     padding: 0.4rem 0.8rem;
     font-size: 0.75rem;
@@ -2168,6 +2237,25 @@
 .lightbox-close:hover {
     border-color: var(--text-red);
     color: var(--text-red);
+}
+
+.lightbox-download {
+    position: absolute;
+    top: 1rem;
+    right: 3.9rem;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: #fff;
+    cursor: pointer;
+    padding: 0.4rem;
+    display: flex;
+    z-index: 2001;
+    transition: border-color 0.2s;
+}
+
+.lightbox-download:hover {
+    border-color: var(--text-blue);
+    color: var(--text-blue);
 }
 
 .lightbox-img {

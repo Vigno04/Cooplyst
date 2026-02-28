@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Search, ThumbsUp, ThumbsDown, Gamepad2, Trophy, Clock, Play, CheckCircle, ChevronRight, X, Star, Upload, Trash2, Loader2, Image as ImageIcon, AlertCircle, Users, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3 } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Plus, Search, ThumbsUp, ThumbsDown, Gamepad2, Trophy, Clock, Play, CheckCircle, ChevronRight, X, Star, Upload, Trash2, Loader2, Image as ImageIcon, AlertCircle, Users, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3, Download } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { uploadWithProgress, uploadChunked } from '../uploadWithProgress';
 
 // ── Sub-components ──────────────────────────────────────────────────────────
 
@@ -371,7 +372,9 @@ function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGam
     const [ratingScore, setRatingScore] = useState(0);
     const [ratingComment, setRatingComment] = useState('');
     const [dragging, setDragging] = useState(false);
-    const dragCounter = { current: 0 };
+    const dragCounter = useRef(0);
+    const [mediaUploads, setMediaUploads] = useState([]);
+    const mediaUploadAbortMapRef = useRef(new Map());
     const [lightboxMedia, setLightboxMedia] = useState(null);
     const [lightboxZoom, setLightboxZoom] = useState(1);
     const [lightboxPan, setLightboxPan] = useState({ x: 0, y: 0 });
@@ -508,16 +511,47 @@ function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGam
     };
 
     const uploadMedia = async (file) => {
-        const formData = new FormData();
-        formData.append('file', file);
+        const uploadId = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+        setMediaUploads(prev => [...prev, { id: uploadId, name: file.name, progress: 0, error: null }]);
         try {
-            await fetch(`/api/games/${game.id}/media`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData,
+            const res = await uploadChunked({
+                url: `/api/games/${game.id}/media`,
+                token,
+                file,
+                onProgress: (pct) => {
+                    setMediaUploads(prev => prev.map(u => u.id === uploadId ? { ...u, progress: pct } : u));
+                },
+                onAbortReady: (abortFn) => {
+                    mediaUploadAbortMapRef.current.set(uploadId, abortFn);
+                },
             });
-            fetchDetail();
-        } catch { /* ignore */ }
+            if (res.ok) {
+                setMediaUploads(prev => prev.map(u => u.id === uploadId ? { ...u, progress: 100 } : u));
+                fetchDetail();
+                setTimeout(() => {
+                    setMediaUploads(prev => prev.filter(u => u.id !== uploadId));
+                    mediaUploadAbortMapRef.current.delete(uploadId);
+                }, 800);
+            } else {
+                const error = res.data?.error || t('uploadFailed');
+                setMediaUploads(prev => prev.map(u => u.id === uploadId ? { ...u, error } : u));
+                mediaUploadAbortMapRef.current.delete(uploadId);
+            }
+        } catch (err) {
+            if (err.message === 'ABORTED') {
+                setMediaUploads(prev => prev.filter(u => u.id !== uploadId));
+                mediaUploadAbortMapRef.current.delete(uploadId);
+                return;
+            }
+            const error = err.message === 'UPLOAD_TIMEOUT' ? t('uploadTimeout') : t('networkError');
+            setMediaUploads(prev => prev.map(u => u.id === uploadId ? { ...u, error } : u));
+            mediaUploadAbortMapRef.current.delete(uploadId);
+        }
+    };
+
+    const cancelMediaUpload = (uploadId) => {
+        const abortFn = mediaUploadAbortMapRef.current.get(uploadId);
+        if (abortFn) abortFn();
     };
 
     const handleDragEnter = (e) => {
@@ -621,6 +655,30 @@ function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGam
         } catch { /* ignore */ }
     };
 
+    const lightboxSource = lightboxMedia
+        ? (lightboxMedia.direct_url || `/api/media/${lightboxMedia.filename}`)
+        : null;
+
+    const lightboxFilename = (() => {
+        if (!lightboxMedia) return 'media';
+        if (lightboxMedia.filename) return lightboxMedia.filename;
+        const ext = lightboxMedia.mime_type?.startsWith('video/') ? 'mp4' : 'jpg';
+        return `cooplyst-media-${Date.now()}.${ext}`;
+    })();
+
+    const handleLightboxDownload = (e) => {
+        e.stopPropagation();
+        if (!lightboxSource) return;
+        const link = document.createElement('a');
+        link.href = lightboxSource;
+        link.download = lightboxFilename;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const canVote = game.status === 'proposed' || game.status === 'voting';
     const canUploadMedia = game.status === 'playing' || game.status === 'completed';
     const statuses = ['proposed', 'voting', 'backlog', 'playing', 'completed'];
@@ -714,330 +772,358 @@ function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGam
                         </div>
 
                         <div className="detail-body">
-                        {game.description && (
-                            <div className="detail-description">
-                                <p>{game.description.length > 600 ? game.description.slice(0, 600) + '…' : game.description}</p>
-                            </div>
-                        )}
+                            {game.description && (
+                                <div className="detail-description">
+                                    <p>{game.description.length > 600 ? game.description.slice(0, 600) + '…' : game.description}</p>
+                                </div>
+                            )}
 
-                        {(game.time_to_beat || game.player_counts || game.coop || game.online_offline) && (
-                            <div className="detail-section">
-                                <h3><Clock size={16} /> {t('advancedMetaSection')}</h3>
-                                {game.time_to_beat && <p className="detail-platforms"><span className="detail-label">{t('timeToBeat')}: </span>{game.time_to_beat}</p>}
-                                {game.player_counts && <p className="detail-platforms"><span className="detail-label">{t('playerCounts')}: </span>{game.player_counts}</p>}
-                                {game.coop && <p className="detail-platforms"><span className="detail-label">{t('coopLabel')}: </span>{game.coop}</p>}
-                                {game.online_offline && <p className="detail-platforms"><span className="detail-label">{t('onlineOffline')}: </span>{game.online_offline}</p>}
-                            </div>
-                        )}
+                            {(game.time_to_beat || game.player_counts || game.coop || game.online_offline) && (
+                                <div className="detail-section">
+                                    <h3><Clock size={16} /> {t('advancedMetaSection')}</h3>
+                                    {game.time_to_beat && <p className="detail-platforms"><span className="detail-label">{t('timeToBeat')}: </span>{game.time_to_beat}</p>}
+                                    {game.player_counts && <p className="detail-platforms"><span className="detail-label">{t('playerCounts')}: </span>{game.player_counts}</p>}
+                                    {game.coop && <p className="detail-platforms"><span className="detail-label">{t('coopLabel')}: </span>{game.coop}</p>}
+                                    {game.online_offline && <p className="detail-platforms"><span className="detail-label">{t('onlineOffline')}: </span>{game.online_offline}</p>}
+                                </div>
+                            )}
 
-                        {(game.screenshots || []).length > 0 && (
-                            <div className="detail-section">
-                                <h3><ImageIcon size={16} /> {t('screenshotsSection')}</h3>
-                                <div className="detail-image-types">
-                                    {(game.screenshots || []).slice(0, 12).map((url, index) => (
-                                        <button key={`${url}-${index}`} className="detail-image-type" onClick={() => setLightboxMedia({ mime_type: 'image/custom', filename: null, direct_url: url })}>
-                                            <img src={url} alt="" />
+                            {(game.screenshots || []).length > 0 && (
+                                <div className="detail-section">
+                                    <h3><ImageIcon size={16} /> {t('screenshotsSection')}</h3>
+                                    <div className="detail-image-types">
+                                        {(game.screenshots || []).slice(0, 12).map((url, index) => (
+                                            <button key={`${url}-${index}`} className="detail-image-type" onClick={() => setLightboxMedia({ mime_type: 'image/custom', filename: null, direct_url: url })}>
+                                                <img src={url} alt="" />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {(game.videos || []).length > 0 && (
+                                <div className="detail-section">
+                                    <h3><Play size={16} /> {t('videosSection')}</h3>
+                                    <div className="detail-video-list">
+                                        {(game.videos || []).slice(0, 8).map((video, index) => (
+                                            <a key={`${video.url}-${index}`} href={video.url} target="_blank" rel="noopener noreferrer" className="detail-video-item">
+                                                <ExternalLink size={13} /> {video.name || `${t('videoLabel')} ${index + 1}`}
+                                            </a>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Voting */}
+                            {canVote && (
+                                <div className="detail-section">
+                                    <h3><ThumbsUp size={16} /> {t('votingSection')}</h3>
+                                    <div className="vote-controls">
+                                        <button
+                                            className={`vote-btn vote-yes ${game.user_vote === 1 ? 'active' : ''}`}
+                                            onClick={() => castVote(1)}
+                                            disabled={voteLoading}
+                                        >
+                                            <ThumbsUp size={18} /> {t('voteYes')} ({game.votes_yes})
                                         </button>
-                                    ))}
+                                        <button
+                                            className={`vote-btn vote-no ${game.user_vote === 0 ? 'active' : ''}`}
+                                            onClick={() => castVote(0)}
+                                            disabled={voteLoading}
+                                        >
+                                            <ThumbsDown size={18} /> {t('voteNo')} ({game.votes_no})
+                                        </button>
+                                    </div>
+                                    {game.voters && game.voters.length > 0 && (
+                                        <div className="voter-list">
+                                            {game.voters.map(v => (
+                                                <span key={v.user_id} className={`voter-chip ${v.vote ? 'voter-yes' : 'voter-no'}`}>
+                                                    {v.username}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {isAdmin && (game.votes_yes > 0 || game.votes_no > 0) && (
+                                        <button className="btn btn-sm btn-danger" onClick={resetVotes} style={{ marginTop: '0.5rem' }}>
+                                            <RotateCcw size={14} /> {t('resetVotes')}
+                                        </button>
+                                    )}
                                 </div>
-                            </div>
-                        )}
+                            )}
 
-                        {(game.videos || []).length > 0 && (
-                            <div className="detail-section">
-                                <h3><Play size={16} /> {t('videosSection')}</h3>
-                                <div className="detail-video-list">
-                                    {(game.videos || []).slice(0, 8).map((video, index) => (
-                                        <a key={`${video.url}-${index}`} href={video.url} target="_blank" rel="noopener noreferrer" className="detail-video-item">
-                                            <ExternalLink size={13} /> {video.name || `${t('videoLabel')} ${index + 1}`}
-                                        </a>
+                            {/* Runs */}
+                            {(game.status === 'playing' || game.status === 'completed' || game.status === 'backlog') && (
+                                <div className="detail-section">
+                                    <h3><Play size={16} /> {t('runsSection')}</h3>
+                                    {(game.runs || []).map(run => (
+                                        <div key={run.id} className="run-card">
+                                            <div className="run-header">
+                                                {isAdmin && editingRunId === run.id ? (
+                                                    <div className="run-name-edit">
+                                                        <input
+                                                            type="text"
+                                                            value={editingRunName}
+                                                            onChange={(e) => setEditingRunName(e.target.value)}
+                                                            className="rating-comment-input"
+                                                        />
+                                                        <button className="btn btn-sm btn-outline" onClick={() => saveRunName(run.id)}>{t('saveRunName')}</button>
+                                                        <button className="btn btn-sm btn-outline" onClick={() => { setEditingRunId(null); setEditingRunName(''); }}>{t('cancelRunName')}</button>
+                                                    </div>
+                                                ) : (
+                                                    <span className="run-label">{run.name || `${t('runLabel')} #${run.run_number}`}</span>
+                                                )}
+                                                {run.completed_at ? (
+                                                    <span className="run-status run-done"><CheckCircle size={14} /> {t('completed')}</span>
+                                                ) : (
+                                                    <span className="run-status run-active"><Play size={14} /> {t('inProgress')}</span>
+                                                )}
+                                            </div>
+                                            {run.average_rating && (
+                                                <div className="run-avg-rating">
+                                                    <Star size={14} /> {run.average_rating}/10
+                                                    <span className="run-rating-count">({run.ratings.length} {t('ratings')})</span>
+                                                </div>
+                                            )}
+                                            {/* Individual ratings (admin can delete) */}
+                                            {isAdmin && run.ratings && run.ratings.length > 0 && (
+                                                <div className="run-ratings-list">
+                                                    {run.ratings.map(r => (
+                                                        <div key={r.user_id} className="run-rating-item">
+                                                            <span className="run-rating-user">{r.username}</span>
+                                                            <span className="run-rating-score"><Star size={12} /> {r.score}/10</span>
+                                                            {r.comment && <span className="run-rating-comment">{r.comment}</span>}
+                                                            <button className="player-remove" onClick={() => deleteRating(run.id, r.user_id)} title={t('deleteRating')}>
+                                                                <X size={12} />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            {/* Rating form */}
+                                            {run.completed_at && (
+                                                <div className="rating-form">
+                                                    <div className="rating-stars">
+                                                        {[...Array(10)].map((_, i) => (
+                                                            <Star
+                                                                key={i}
+                                                                size={18}
+                                                                className={`rating-star ${i < ratingScore ? 'filled' : ''}`}
+                                                                onClick={() => setRatingScore(i + 1)}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                    <input
+                                                        type="text"
+                                                        placeholder={t('ratingCommentPlaceholder')}
+                                                        value={ratingComment}
+                                                        onChange={e => setRatingComment(e.target.value)}
+                                                        className="rating-comment-input"
+                                                    />
+                                                    <button className="btn btn-primary btn-sm" onClick={() => submitRating(run.id)} disabled={!ratingScore}>
+                                                        {t('submitRating')}
+                                                    </button>
+                                                </div>
+                                            )}
+                                            <div className="run-admin-actions">
+                                                {isAdmin && editingRunId !== run.id && (
+                                                    <button className="btn btn-sm btn-outline" onClick={() => { setEditingRunId(run.id); setEditingRunName(run.name || `${t('runLabel')} #${run.run_number}`); }}>
+                                                        <Edit3 size={14} /> {t('editRunName')}
+                                                    </button>
+                                                )}
+                                                {!run.completed_at && isAdmin && (
+                                                    <button className="btn btn-sm btn-outline" onClick={() => completeRun(run.id)}>
+                                                        <CheckCircle size={14} /> {t('completeRun')}
+                                                    </button>
+                                                )}
+                                                {isAdmin && (
+                                                    <button className="btn btn-sm btn-danger" onClick={() => deleteRun(run.id)}>
+                                                        <Trash2 size={14} /> {t('deleteRun')}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
                                     ))}
+                                    {isAdmin && (
+                                        <button className="btn btn-sm btn-outline" onClick={startRun} style={{ marginTop: '0.5rem' }}>
+                                            <Play size={14} /> {t('startNewRun')}
+                                        </button>
+                                    )}
                                 </div>
-                            </div>
-                        )}
+                            )}
 
-                        {/* Voting */}
-                        {canVote && (
+                            {/* Players */}
                             <div className="detail-section">
-                                <h3><ThumbsUp size={16} /> {t('votingSection')}</h3>
-                                <div className="vote-controls">
-                                    <button
-                                        className={`vote-btn vote-yes ${game.user_vote === 1 ? 'active' : ''}`}
-                                        onClick={() => castVote(1)}
-                                        disabled={voteLoading}
-                                    >
-                                        <ThumbsUp size={18} /> {t('voteYes')} ({game.votes_yes})
-                                    </button>
-                                    <button
-                                        className={`vote-btn vote-no ${game.user_vote === 0 ? 'active' : ''}`}
-                                        onClick={() => castVote(0)}
-                                        disabled={voteLoading}
-                                    >
-                                        <ThumbsDown size={18} /> {t('voteNo')} ({game.votes_no})
-                                    </button>
-                                </div>
-                                {game.voters && game.voters.length > 0 && (
-                                    <div className="voter-list">
-                                        {game.voters.map(v => (
-                                            <span key={v.user_id} className={`voter-chip ${v.vote ? 'voter-yes' : 'voter-no'}`}>
-                                                {v.username}
-                                            </span>
+                                <h3><Users size={16} /> {t('playersSection')}</h3>
+                                {(game.players || []).length > 0 ? (
+                                    <div className="player-list">
+                                        {game.players.map(p => (
+                                            <div key={p.user_id} className="player-chip">
+                                                {p.avatar ? (
+                                                    <img src={`/api/avatars/${p.avatar}`} alt="" className="player-avatar" />
+                                                ) : (
+                                                    <Users size={14} className="player-avatar-placeholder" />
+                                                )}
+                                                <span className="player-name">{p.username}</span>
+                                                {isAdmin && (
+                                                    <button
+                                                        className="player-remove"
+                                                        title={t('removePlayer')}
+                                                        onClick={async () => {
+                                                            try {
+                                                                const res = await fetch(`/api/games/${game.id}/players/${p.user_id}`, {
+                                                                    method: 'DELETE',
+                                                                    headers: { 'Authorization': `Bearer ${token}` },
+                                                                });
+                                                                if (res.ok) {
+                                                                    const data = await res.json();
+                                                                    setGame(prev => ({ ...prev, players: data.players }));
+                                                                }
+                                                            } catch { /* ignore */ }
+                                                        }}
+                                                    >
+                                                        <X size={12} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="players-empty">{t('noPlayers')}</p>
+                                )}
+                                {isAdmin && game.status === 'playing' && (() => {
+                                    const playerIds = new Set((game.players || []).map(p => p.user_id));
+                                    const available = allUsers.filter(u => !playerIds.has(u.id));
+                                    if (available.length === 0) return null;
+                                    return (
+                                        <div className="player-add-row">
+                                            <select
+                                                id="player-add-select"
+                                                className="player-add-select"
+                                                defaultValue=""
+                                                onChange={async (e) => {
+                                                    const userId = e.target.value;
+                                                    if (!userId) return;
+                                                    try {
+                                                        const res = await fetch(`/api/games/${game.id}/players`, {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                                            body: JSON.stringify({ user_id: userId }),
+                                                        });
+                                                        if (res.ok) {
+                                                            const data = await res.json();
+                                                            setGame(prev => ({ ...prev, players: data.players }));
+                                                        }
+                                                    } catch { /* ignore */ }
+                                                    e.target.value = '';
+                                                }}
+                                            >
+                                                <option value="" disabled>{t('addPlayer')}</option>
+                                                {available.map(u => (
+                                                    <option key={u.id} value={u.id}>{u.username}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            {/* Media */}
+                            <div
+                                className={`detail-section media-drop-zone ${dragging ? 'media-drop-zone--active' : ''}`}
+                                onDragEnter={canUploadMedia ? handleDragEnter : undefined}
+                                onDragLeave={canUploadMedia ? handleDragLeave : undefined}
+                                onDragOver={canUploadMedia ? handleDragOver : undefined}
+                                onDrop={canUploadMedia ? handleDrop : undefined}
+                            >
+                                {dragging && (
+                                    <div className="media-drop-overlay">
+                                        <Upload size={32} />
+                                        <span>{t('dropMediaHere')}</span>
+                                    </div>
+                                )}
+                                <h3><ImageIcon size={16} /> {t('mediaSection')}</h3>
+                                {mediaUploads.length > 0 && (
+                                    <div className="upload-progress-list">
+                                        {mediaUploads.map((u) => (
+                                            <div key={u.id} className="upload-progress-card">
+                                                <div className="upload-progress-meta">
+                                                    <span>{u.name}</span>
+                                                    <div className="upload-progress-actions">
+                                                        <span>{u.error ? t('uploadFailed') : `${u.progress}%`}</span>
+                                                        {!u.error && u.progress < 100 && (
+                                                            <button
+                                                                type="button"
+                                                                className="upload-progress-cancel"
+                                                                onClick={() => cancelMediaUpload(u.id)}
+                                                                aria-label="Cancel upload"
+                                                            >
+                                                                <X size={12} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="upload-progress-track">
+                                                    <div className="upload-progress-fill" style={{ width: `${u.error ? 100 : u.progress}%` }} />
+                                                </div>
+                                                {u.error && <div className="upload-progress-error">{u.error}</div>}
+                                            </div>
                                         ))}
                                     </div>
                                 )}
-                                {isAdmin && (game.votes_yes > 0 || game.votes_no > 0) && (
-                                    <button className="btn btn-sm btn-danger" onClick={resetVotes} style={{ marginTop: '0.5rem' }}>
-                                        <RotateCcw size={14} /> {t('resetVotes')}
-                                    </button>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Runs */}
-                        {(game.status === 'playing' || game.status === 'completed' || game.status === 'backlog') && (
-                            <div className="detail-section">
-                                <h3><Play size={16} /> {t('runsSection')}</h3>
-                                {(game.runs || []).map(run => (
-                                    <div key={run.id} className="run-card">
-                                        <div className="run-header">
-                                            {isAdmin && editingRunId === run.id ? (
-                                                <div className="run-name-edit">
-                                                    <input
-                                                        type="text"
-                                                        value={editingRunName}
-                                                        onChange={(e) => setEditingRunName(e.target.value)}
-                                                        className="rating-comment-input"
-                                                    />
-                                                    <button className="btn btn-sm btn-outline" onClick={() => saveRunName(run.id)}>{t('saveRunName')}</button>
-                                                    <button className="btn btn-sm btn-outline" onClick={() => { setEditingRunId(null); setEditingRunName(''); }}>{t('cancelRunName')}</button>
-                                                </div>
-                                            ) : (
-                                                <span className="run-label">{run.name || `${t('runLabel')} #${run.run_number}`}</span>
-                                            )}
-                                            {run.completed_at ? (
-                                                <span className="run-status run-done"><CheckCircle size={14} /> {t('completed')}</span>
-                                            ) : (
-                                                <span className="run-status run-active"><Play size={14} /> {t('inProgress')}</span>
-                                            )}
-                                        </div>
-                                        {run.average_rating && (
-                                            <div className="run-avg-rating">
-                                                <Star size={14} /> {run.average_rating}/10
-                                                <span className="run-rating-count">({run.ratings.length} {t('ratings')})</span>
+                                {(() => {
+                                    const media = game.media || [];
+                                    // Group by uploader
+                                    const grouped = {};
+                                    for (const m of media) {
+                                        const name = m.uploaded_by_username || 'Unknown';
+                                        if (!grouped[name]) grouped[name] = { avatar: m.uploaded_by_avatar, items: [] };
+                                        grouped[name].items.push(m);
+                                    }
+                                    const groups = Object.entries(grouped);
+                                    if (groups.length === 0) {
+                                        return <p className="players-empty">{t('noMedia')}</p>;
+                                    }
+                                    return groups.map(([username, { avatar, items }]) => (
+                                        <div key={username} className="media-group">
+                                            <div className="media-group-header">
+                                                {avatar ? (
+                                                    <img src={`/api/avatars/${avatar}`} alt="" className="media-group-avatar" />
+                                                ) : (
+                                                    <Users size={14} className="player-avatar-placeholder" />
+                                                )}
+                                                {username}
                                             </div>
-                                        )}
-                                        {/* Individual ratings (admin can delete) */}
-                                        {isAdmin && run.ratings && run.ratings.length > 0 && (
-                                            <div className="run-ratings-list">
-                                                {run.ratings.map(r => (
-                                                    <div key={r.user_id} className="run-rating-item">
-                                                        <span className="run-rating-user">{r.username}</span>
-                                                        <span className="run-rating-score"><Star size={12} /> {r.score}/10</span>
-                                                        {r.comment && <span className="run-rating-comment">{r.comment}</span>}
-                                                        <button className="player-remove" onClick={() => deleteRating(run.id, r.user_id)} title={t('deleteRating')}>
-                                                            <X size={12} />
-                                                        </button>
+                                            <div className="media-gallery">
+                                                {items.map(m => (
+                                                    <div key={m.id} className="media-item" onClick={() => { setLightboxMedia(m); setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }}>
+                                                        {m.mime_type.startsWith('image/') ? (
+                                                            <img src={`/api/media/${m.filename}`} alt="" className="media-thumb" />
+                                                        ) : (
+                                                            <video src={`/api/media/${m.filename}`} className="media-thumb" />
+                                                        )}
+                                                        {(m.uploaded_by === currentUser?.id || isAdmin) && (
+                                                            <button className="media-delete" onClick={(e) => { e.stopPropagation(); deleteMedia(m.id); }}>
+                                                                <Trash2 size={12} />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
-                                        )}
-                                        {/* Rating form */}
-                                        {run.completed_at && (
-                                            <div className="rating-form">
-                                                <div className="rating-stars">
-                                                    {[...Array(10)].map((_, i) => (
-                                                        <Star
-                                                            key={i}
-                                                            size={18}
-                                                            className={`rating-star ${i < ratingScore ? 'filled' : ''}`}
-                                                            onClick={() => setRatingScore(i + 1)}
-                                                        />
-                                                    ))}
-                                                </div>
-                                                <input
-                                                    type="text"
-                                                    placeholder={t('ratingCommentPlaceholder')}
-                                                    value={ratingComment}
-                                                    onChange={e => setRatingComment(e.target.value)}
-                                                    className="rating-comment-input"
-                                                />
-                                                <button className="btn btn-primary btn-sm" onClick={() => submitRating(run.id)} disabled={!ratingScore}>
-                                                    {t('submitRating')}
-                                                </button>
-                                            </div>
-                                        )}
-                                        <div className="run-admin-actions">
-                                            {isAdmin && editingRunId !== run.id && (
-                                                <button className="btn btn-sm btn-outline" onClick={() => { setEditingRunId(run.id); setEditingRunName(run.name || `${t('runLabel')} #${run.run_number}`); }}>
-                                                    <Edit3 size={14} /> {t('editRunName')}
-                                                </button>
-                                            )}
-                                            {!run.completed_at && isAdmin && (
-                                                <button className="btn btn-sm btn-outline" onClick={() => completeRun(run.id)}>
-                                                    <CheckCircle size={14} /> {t('completeRun')}
-                                                </button>
-                                            )}
-                                            {isAdmin && (
-                                                <button className="btn btn-sm btn-danger" onClick={() => deleteRun(run.id)}>
-                                                    <Trash2 size={14} /> {t('deleteRun')}
-                                                </button>
-                                            )}
                                         </div>
-                                    </div>
-                                ))}
-                                {isAdmin && (
-                                    <button className="btn btn-sm btn-outline" onClick={startRun} style={{ marginTop: '0.5rem' }}>
-                                        <Play size={14} /> {t('startNewRun')}
-                                    </button>
+                                    ));
+                                })()}
+                                {canUploadMedia ? (
+                                    <label className="btn btn-sm btn-outline media-upload-btn">
+                                        <Upload size={14} /> {t('uploadMedia')}
+                                        <input type="file" accept="image/*,video/*" multiple hidden onChange={e => {
+                                            [...(e.target.files || [])].forEach(f => uploadMedia(f));
+                                            e.target.value = '';
+                                        }} />
+                                    </label>
+                                ) : (
+                                    <p className="players-empty">{t('mediaUploadLocked')}</p>
                                 )}
                             </div>
-                        )}
-
-                        {/* Players */}
-                        <div className="detail-section">
-                            <h3><Users size={16} /> {t('playersSection')}</h3>
-                            {(game.players || []).length > 0 ? (
-                                <div className="player-list">
-                                    {game.players.map(p => (
-                                        <div key={p.user_id} className="player-chip">
-                                            {p.avatar ? (
-                                                <img src={`/api/avatars/${p.avatar}`} alt="" className="player-avatar" />
-                                            ) : (
-                                                <Users size={14} className="player-avatar-placeholder" />
-                                            )}
-                                            <span className="player-name">{p.username}</span>
-                                            {isAdmin && (
-                                                <button
-                                                    className="player-remove"
-                                                    title={t('removePlayer')}
-                                                    onClick={async () => {
-                                                        try {
-                                                            const res = await fetch(`/api/games/${game.id}/players/${p.user_id}`, {
-                                                                method: 'DELETE',
-                                                                headers: { 'Authorization': `Bearer ${token}` },
-                                                            });
-                                                            if (res.ok) {
-                                                                const data = await res.json();
-                                                                setGame(prev => ({ ...prev, players: data.players }));
-                                                            }
-                                                        } catch { /* ignore */ }
-                                                    }}
-                                                >
-                                                    <X size={12} />
-                                                </button>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="players-empty">{t('noPlayers')}</p>
-                            )}
-                            {isAdmin && game.status === 'playing' && (() => {
-                                const playerIds = new Set((game.players || []).map(p => p.user_id));
-                                const available = allUsers.filter(u => !playerIds.has(u.id));
-                                if (available.length === 0) return null;
-                                return (
-                                    <div className="player-add-row">
-                                        <select
-                                            id="player-add-select"
-                                            className="player-add-select"
-                                            defaultValue=""
-                                            onChange={async (e) => {
-                                                const userId = e.target.value;
-                                                if (!userId) return;
-                                                try {
-                                                    const res = await fetch(`/api/games/${game.id}/players`, {
-                                                        method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                                                        body: JSON.stringify({ user_id: userId }),
-                                                    });
-                                                    if (res.ok) {
-                                                        const data = await res.json();
-                                                        setGame(prev => ({ ...prev, players: data.players }));
-                                                    }
-                                                } catch { /* ignore */ }
-                                                e.target.value = '';
-                                            }}
-                                        >
-                                            <option value="" disabled>{t('addPlayer')}</option>
-                                            {available.map(u => (
-                                                <option key={u.id} value={u.id}>{u.username}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                );
-                            })()}
-                        </div>
-
-                        {/* Media */}
-                        <div
-                            className={`detail-section media-drop-zone ${dragging ? 'media-drop-zone--active' : ''}`}
-                            onDragEnter={canUploadMedia ? handleDragEnter : undefined}
-                            onDragLeave={canUploadMedia ? handleDragLeave : undefined}
-                            onDragOver={canUploadMedia ? handleDragOver : undefined}
-                            onDrop={canUploadMedia ? handleDrop : undefined}
-                        >
-                            {dragging && (
-                                <div className="media-drop-overlay">
-                                    <Upload size={32} />
-                                    <span>{t('dropMediaHere')}</span>
-                                </div>
-                            )}
-                            <h3><ImageIcon size={16} /> {t('mediaSection')}</h3>
-                            {(() => {
-                                const media = game.media || [];
-                                // Group by uploader
-                                const grouped = {};
-                                for (const m of media) {
-                                    const name = m.uploaded_by_username || 'Unknown';
-                                    if (!grouped[name]) grouped[name] = { avatar: m.uploaded_by_avatar, items: [] };
-                                    grouped[name].items.push(m);
-                                }
-                                const groups = Object.entries(grouped);
-                                if (groups.length === 0) {
-                                    return <p className="players-empty">{t('noMedia')}</p>;
-                                }
-                                return groups.map(([username, { avatar, items }]) => (
-                                    <div key={username} className="media-group">
-                                        <div className="media-group-header">
-                                            {avatar ? (
-                                                <img src={`/api/avatars/${avatar}`} alt="" className="media-group-avatar" />
-                                            ) : (
-                                                <Users size={14} className="player-avatar-placeholder" />
-                                            )}
-                                            {username}
-                                        </div>
-                                        <div className="media-gallery">
-                                            {items.map(m => (
-                                                <div key={m.id} className="media-item" onClick={() => { setLightboxMedia(m); setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }}>
-                                                    {m.mime_type.startsWith('image/') ? (
-                                                        <img src={`/api/media/${m.filename}`} alt="" className="media-thumb" />
-                                                    ) : (
-                                                        <video src={`/api/media/${m.filename}`} className="media-thumb" />
-                                                    )}
-                                                    {(m.uploaded_by === currentUser?.id || isAdmin) && (
-                                                        <button className="media-delete" onClick={(e) => { e.stopPropagation(); deleteMedia(m.id); }}>
-                                                            <Trash2 size={12} />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ));
-                            })()}
-                            {canUploadMedia ? (
-                                <label className="btn btn-sm btn-outline media-upload-btn">
-                                    <Upload size={14} /> {t('uploadMedia')}
-                                    <input type="file" accept="image/*,video/*" multiple hidden onChange={e => {
-                                        [...(e.target.files || [])].forEach(f => uploadMedia(f));
-                                        e.target.value = '';
-                                    }} />
-                                </label>
-                            ) : (
-                                <p className="players-empty">{t('mediaUploadLocked')}</p>
-                            )}
-                        </div>
 
                         </div>{/* end detail-body */}
                     </>
@@ -1062,6 +1148,9 @@ function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGam
                             });
                         }}
                     >
+                        <button className="lightbox-download" onClick={handleLightboxDownload} title={t('downloadMedia')} aria-label={t('downloadMedia')}>
+                            <Download size={18} />
+                        </button>
                         <button className="lightbox-close" onClick={() => setLightboxMedia(null)}><X size={24} /></button>
                         {lightboxZoom > 1 && (
                             <div className="lightbox-zoom-badge">{Math.round(lightboxZoom * 100)}%</div>

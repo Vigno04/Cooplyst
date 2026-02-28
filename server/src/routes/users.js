@@ -12,10 +12,44 @@ const SALT_ROUNDS = 12;
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../../data');
 const AVATARS_DIR = path.join(DATA_DIR, 'avatars');
+const UPLOAD_TMP_DIR = path.join(DATA_DIR, 'tmp_uploads');
 if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
+if (!fs.existsSync(UPLOAD_TMP_DIR)) fs.mkdirSync(UPLOAD_TMP_DIR, { recursive: true });
 
-// Multer: accept single image up to 5 MB, stored in memory
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const DEFAULT_AVATAR_MAX_MB = 25;
+const parsedAvatarMaxMb = Number(process.env.AVATAR_UPLOAD_MAX_MB);
+const AVATAR_MAX_MB = Number.isFinite(parsedAvatarMaxMb) && parsedAvatarMaxMb > 0
+    ? parsedAvatarMaxMb
+    : DEFAULT_AVATAR_MAX_MB;
+const AVATAR_MAX_BYTES = Math.floor(AVATAR_MAX_MB * 1024 * 1024);
+
+const avatarUpload = multer({
+    storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, UPLOAD_TMP_DIR),
+        filename: (_req, file, cb) => {
+            const ext = path.extname(file.originalname || '').toLowerCase() || '.bin';
+            cb(null, `avatar-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
+        },
+    }),
+    limits: { fileSize: AVATAR_MAX_BYTES },
+    fileFilter: (_req, file, cb) => {
+        if (file.mimetype?.startsWith('image/')) return cb(null, true);
+        cb(new Error('INVALID_FILE_TYPE'));
+    },
+});
+
+const avatarUploadMiddleware = (req, res, next) => {
+    avatarUpload.single('avatar')(req, res, (err) => {
+        if (!err) return next();
+        if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({ error: `Avatar is too large. Maximum allowed is ${AVATAR_MAX_MB} MB` });
+        }
+        if (err.message === 'INVALID_FILE_TYPE') {
+            return res.status(400).json({ error: 'Only image files are allowed' });
+        }
+        return res.status(400).json({ error: 'Invalid upload payload' });
+    });
+};
 
 // GET /api/users/me — returns current user profile
 router.get('/me', requireAuth, (req, res) => {
@@ -93,7 +127,7 @@ router.patch('/me', requireAuth, (req, res) => {
 });
 
 // POST /api/users/me/avatar — upload profile picture
-router.post('/me/avatar', requireAuth, upload.single('avatar'), async (req, res) => {
+router.post('/me/avatar', requireAuth, avatarUploadMiddleware, async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
     const userId = req.user.id;
@@ -101,16 +135,17 @@ router.post('/me/avatar', requireAuth, upload.single('avatar'), async (req, res)
     const pixelFile = `${userId}_pixel.webp`;
     const normalPath = path.join(AVATARS_DIR, normalFile);
     const pixelPath = path.join(AVATARS_DIR, pixelFile);
+    const tmpPath = req.file.path;
 
     try {
         // Generate normal 128x128 avatar
-        await sharp(req.file.buffer)
+        await sharp(tmpPath)
             .resize(128, 128, { fit: 'cover' })
             .webp({ quality: 80 })
             .toFile(normalPath);
 
         // Generate pixelated variant: downscale to 16x16, then upscale with nearest-neighbor
-        await sharp(req.file.buffer)
+        await sharp(tmpPath)
             .resize(16, 16, { fit: 'cover' })
             .webp({ quality: 80 })
             .toBuffer()
@@ -125,6 +160,10 @@ router.post('/me/avatar', requireAuth, upload.single('avatar'), async (req, res)
     } catch (err) {
         console.error('[COOPLYST] Avatar processing error:', err.message);
         res.status(500).json({ error: 'Failed to process image' });
+    } finally {
+        if (tmpPath && fs.existsSync(tmpPath)) {
+            try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+        }
     }
 });
 

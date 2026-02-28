@@ -9,7 +9,7 @@ const db = require('../db');
 const router = express.Router();
 const SALT_ROUNDS = 12;
 const JWT_SECRET = process.env.JWT_SECRET;
-const TOKEN_EXPIRY = '8h';
+const TOKEN_EXPIRY = '30d';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

@@ -47,6 +47,8 @@ Use [docker-compose.server.yml](docker-compose.server.yml) on your server.
 1. Create `.env` on server with:
 	- `GHCR_OWNER=<your-github-user-or-org>`
 	- `JWT_SECRET=<strong-random-secret>`
+	- `MEDIA_UPLOAD_MAX_MB=250` (optional)
+	- `AVATAR_UPLOAD_MAX_MB=25` (optional)
 2. Pull and run:
 	- `docker compose -f docker-compose.server.yml pull`
 	- `docker compose -f docker-compose.server.yml up -d`
