@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      IMAGE: ${{ github.repository_owner }}/cooplyst
+      IMAGE: vigno04/cooplyst
       IMAGE_TAG: develop
 
     steps:
