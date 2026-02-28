@@ -134,17 +134,17 @@ if (!userCols.includes('avatar_pixelated')) {
 const gameCols = db.prepare('PRAGMA table_info(games)').all().map(c => c.name);
 if (!gameCols.includes('backdrop_url')) db.exec('ALTER TABLE games ADD COLUMN backdrop_url TEXT');
 if (!gameCols.includes('thumbnail_url')) db.exec('ALTER TABLE games ADD COLUMN thumbnail_url TEXT');
-if (!gameCols.includes('logo_url'))      db.exec('ALTER TABLE games ADD COLUMN logo_url TEXT');
-if (!gameCols.includes('rating'))       db.exec('ALTER TABLE games ADD COLUMN rating REAL');
-if (!gameCols.includes('developer'))    db.exec('ALTER TABLE games ADD COLUMN developer TEXT');
+if (!gameCols.includes('logo_url')) db.exec('ALTER TABLE games ADD COLUMN logo_url TEXT');
+if (!gameCols.includes('rating')) db.exec('ALTER TABLE games ADD COLUMN rating REAL');
+if (!gameCols.includes('developer')) db.exec('ALTER TABLE games ADD COLUMN developer TEXT');
 if (!gameCols.includes('release_date')) db.exec('ALTER TABLE games ADD COLUMN release_date TEXT');
-if (!gameCols.includes('age_rating'))   db.exec('ALTER TABLE games ADD COLUMN age_rating TEXT');
+if (!gameCols.includes('age_rating')) db.exec('ALTER TABLE games ADD COLUMN age_rating TEXT');
 if (!gameCols.includes('time_to_beat')) db.exec('ALTER TABLE games ADD COLUMN time_to_beat TEXT');
 if (!gameCols.includes('player_counts')) db.exec('ALTER TABLE games ADD COLUMN player_counts TEXT');
-if (!gameCols.includes('coop'))         db.exec('ALTER TABLE games ADD COLUMN coop TEXT');
+if (!gameCols.includes('coop')) db.exec('ALTER TABLE games ADD COLUMN coop TEXT');
 if (!gameCols.includes('online_offline')) db.exec('ALTER TABLE games ADD COLUMN online_offline TEXT');
-if (!gameCols.includes('screenshots'))  db.exec('ALTER TABLE games ADD COLUMN screenshots TEXT');
-if (!gameCols.includes('videos'))       db.exec('ALTER TABLE games ADD COLUMN videos TEXT');
+if (!gameCols.includes('screenshots')) db.exec('ALTER TABLE games ADD COLUMN screenshots TEXT');
+if (!gameCols.includes('videos')) db.exec('ALTER TABLE games ADD COLUMN videos TEXT');
 if (!gameCols.includes('provider_payload')) db.exec('ALTER TABLE games ADD COLUMN provider_payload TEXT');
 
 // Migration: add optional run name column
@@ -153,8 +153,8 @@ if (!runCols.includes('name')) db.exec('ALTER TABLE game_runs ADD COLUMN name TE
 
 // Migration: add language preference to users
 if (!userCols.includes('language')) db.exec('ALTER TABLE users ADD COLUMN language TEXT');
-if (!gameCols.includes('tags'))         db.exec('ALTER TABLE games ADD COLUMN tags TEXT');
-if (!gameCols.includes('website'))      db.exec('ALTER TABLE games ADD COLUMN website TEXT');
+if (!gameCols.includes('tags')) db.exec('ALTER TABLE games ADD COLUMN tags TEXT');
+if (!gameCols.includes('website')) db.exec('ALTER TABLE games ADD COLUMN website TEXT');
 
 // Make password_hash nullable on existing DBs (SQLite can't ALTER COLUMN, so we
 // use a pragma trick: the column was originally NOT NULL, but that constraint is
@@ -176,5 +176,20 @@ seedSetting.run('authentik_auto_redirect', 'false');
 seedSetting.run('vote_threshold', '3');
 seedSetting.run('vote_visibility', 'public');
 seedSetting.run('game_api_providers', '[]');
+seedSetting.run('upload_timeout_ms', '300000');
+seedSetting.run('allow_all_users_add_downloads', 'false');
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS game_downloads (
+    id          TEXT PRIMARY KEY,
+    game_id     TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    type        TEXT NOT NULL CHECK(type IN ('magnet','torrent')),
+    link        TEXT,
+    filename    TEXT,
+    mime_type   TEXT,
+    uploaded_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    uploaded_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+`);
 
 module.exports = db;

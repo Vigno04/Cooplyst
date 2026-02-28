@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Settings, AlertCircle, CheckCircle, Save, X, ShieldCheck, ChevronDown, BookOpen, FlaskConical, Loader2, Gamepad2, ArrowUp, ArrowDown, Plus, Trash2, Bell, Mail, MessageSquare, Eye, EyeOff } from 'lucide-react';
+import CustomSelect from '../components/CustomSelect';
 
 export default function AdminScreen({ token, onClose }) {
     const { t } = useTranslation();
@@ -409,6 +410,24 @@ export default function AdminScreen({ token, onClose }) {
                                             onChange={e => setText('site_url', e.target.value)}
                                         />
                                     </div>
+                                    {/* ── Upload timeout (seconds) ───────────────── */}
+                                    <div className="admin-setting-row admin-setting-row--text">
+                                        <div className="admin-setting-info">
+                                            <label className="admin-setting-label" htmlFor="upload-timeout">
+                                                {t('adminUploadTimeout') || 'UPLOAD TIMEOUT (seconds)'}
+                                            </label>
+                                            <div className="admin-setting-desc">{t('adminUploadTimeoutDesc') || 'Client-side timeout for file uploads. Enter the number of seconds after which the browser will abort an upload if it has not completed.'}</div>
+                                        </div>
+                                        <input
+                                            id="upload-timeout"
+                                            type="number"
+                                            min="1"
+                                            className="admin-text-input"
+                                            value={pending.upload_timeout_ms ? Math.floor(Number(pending.upload_timeout_ms) / 1000) : ''}
+                                            onChange={(e) => setText('upload_timeout_ms', String(Math.max(1, Number(e.target.value || 0)) * 1000))}
+                                            placeholder={t('adminUploadTimeoutPlaceholder') || 'e.g. 300 (seconds)'}
+                                        />
+                                    </div>
 
                                     {/* ── SSO / Authentik accordion ─────────────────── */}
                                     <div className="admin-accordion">
@@ -711,6 +730,20 @@ export default function AdminScreen({ token, onClose }) {
                                         </button>
                                     </div>
 
+                                    {/* Allow All Users Make Downloads */}
+                                    <div className="admin-setting-row">
+                                        <div className="admin-setting-info">
+                                            <div className="admin-setting-label">{t('adminAllowAllUsersDownloads') || 'Allow non-admin users to add download links'}</div>
+                                            <div className="admin-setting-desc">{t('adminAllowAllUsersDownloadsDesc') || 'Enable to allow any user (not just administrators) to add download sources — such as magnet links or torrent files — to game entries. Use with caution; user-added downloads may require moderation.'}</div>
+                                        </div>
+                                        <button
+                                            className={`toggle-btn ${pending.allow_all_users_add_downloads === 'true' ? 'on' : 'off'}`}
+                                            onClick={() => toggle('allow_all_users_add_downloads')}
+                                        >
+                                            {pending.allow_all_users_add_downloads === 'true' ? t('toggleOn') : t('toggleOff')}
+                                        </button>
+                                    </div>
+
                                     {/* Game API Providers */}
                                     <div className="admin-providers-section">
                                         <div className="admin-setting-label" style={{ marginBottom: '0.5rem' }}>
@@ -723,11 +756,14 @@ export default function AdminScreen({ token, onClose }) {
                                         {getProviders().map((p, idx) => (
                                             <div key={idx} className="provider-card">
                                                 <div className="provider-card-header">
-                                                    <select
+                                                    <CustomSelect
                                                         className="provider-type-select"
                                                         value={p.type}
-                                                        onChange={e => {
-                                                            const newType = e.target.value;
+                                                        options={[
+                                                            { value: 'rawg', label: 'RAWG' },
+                                                            { value: 'igdb', label: 'IGDB' }
+                                                        ]}
+                                                        onChange={(newType) => {
                                                             const newP = { type: newType, enabled: p.enabled, priority: p.priority };
                                                             if (newType === 'rawg') newP.api_key = '';
                                                             else if (newType === 'igdb') { newP.client_id = ''; newP.client_secret = ''; }
@@ -735,10 +771,7 @@ export default function AdminScreen({ token, onClose }) {
                                                             list[idx] = newP;
                                                             setProviders(list);
                                                         }}
-                                                    >
-                                                        <option value="rawg">RAWG</option>
-                                                        <option value="igdb">IGDB</option>
-                                                    </select>
+                                                    />
                                                     <div className="provider-card-actions">
                                                         <button className="btn-icon" onClick={() => moveProvider(idx, -1)} disabled={idx === 0}>
                                                             <ArrowUp size={14} />
@@ -1043,7 +1076,7 @@ export default function AdminScreen({ token, onClose }) {
                                                 {smtpTestResult && (
                                                     <div className={`provider-test-result ${smtpTestResult.ok ? 'ok' : 'fail'}`}>
                                                         {smtpTestResult.ok
-                                                            ? <><CheckCircle size={13} /> {smtpTestResult.detail}</>  
+                                                            ? <><CheckCircle size={13} /> {smtpTestResult.detail}</>
                                                             : <><AlertCircle size={13} /> {smtpTestResult.detail}</>}
                                                     </div>
                                                 )}
@@ -1084,15 +1117,15 @@ export default function AdminScreen({ token, onClose }) {
                                                         <label className="admin-setting-label" htmlFor="discord-lang">{t('adminDiscordLanguage')}</label>
                                                         <div className="admin-setting-desc">{t('adminDiscordLanguageDesc')}</div>
                                                     </div>
-                                                    <select
-                                                        id="discord-lang"
+                                                    <CustomSelect
                                                         className="provider-type-select"
                                                         value={pending.discord_language || 'en'}
-                                                        onChange={e => setText('discord_language', e.target.value)}
-                                                    >
-                                                        <option value="en">English</option>
-                                                        <option value="it">Italiano</option>
-                                                    </select>
+                                                        options={[
+                                                            { value: 'en', label: 'English' },
+                                                            { value: 'it', label: 'Italiano' }
+                                                        ]}
+                                                        onChange={(val) => setText('discord_language', val)}
+                                                    />
                                                 </div>
 
                                                 <div className="admin-setting-row admin-setting-row--text">

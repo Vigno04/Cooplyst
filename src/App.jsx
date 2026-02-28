@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Gamepad2, LogIn, MonitorPlay, Globe, User, ChevronDown, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Gamepad2, LogIn, MonitorPlay, Globe, User, Loader2, Eye, EyeOff } from 'lucide-react';
 import authentikLogo from './assets/authentik_pixellogo.png';
 import cooplystLogo from './assets/cooplyst-icon.png';
 import { useTranslation } from 'react-i18next';
@@ -49,7 +49,6 @@ function App() {
     const [autoRedirect, setAutoRedirect] = useState(false);
 
     // UI state
-    const [langDropdownOpen, setLangDropdownOpen] = useState(false);
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
     const [activePage, setActivePage] = useState(null); // null | 'profile' | 'admin'
     const [ssoLinkStatus, setSsoLinkStatus] = useState(null); // { type, msg } passed to ProfileScreen
@@ -67,9 +66,50 @@ function App() {
                 setLocalAuthEnabled(data.local_auth_enabled !== false);
                 setAuthentikEnabled(!!data.authentik_enabled);
                 setAutoRedirect(!!data.authentik_auto_redirect);
+                // Expose public config globally for other modules (e.g. upload helpers)
+                try { window.COOPLYST_CONFIG = data; } catch (e) { /* ignore */ }
                 setConfigLoaded(true);
             })
             .catch(() => { setConfigLoaded(true); });
+
+    // Global fetch interceptor for 401 Unauthorized
+    useEffect(() => {
+        const originalFetch = window.fetch;
+        window.fetch = async (...args) => {
+            const response = await originalFetch(...args);
+            if (response.status === 401) {
+                const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
+                // Ignore public / auth endpoints
+                if (!url.includes('/api/auth/login') && !url.includes('/api/auth/register') && !url.includes('/api/auth/config')) {
+                    window.dispatchEvent(new Event('cooplyst:unauthorized'));
+                }
+            }
+            return response;
+        };
+        return () => {
+            window.fetch = originalFetch;
+        };
+    }, []);
+
+    // Global unauthorized handler
+    useEffect(() => {
+        const handleUnauthorized = () => {
+            if (localStorage.getItem(TOKEN_KEY)) {
+                localStorage.removeItem(TOKEN_KEY);
+                setToken(null);
+                setCurrentUser(null);
+                setActivePage(null);
+                setProfileDropdownOpen(false);
+                setConfigLoaded(false);
+                fetchConfig().then(() => {
+                    sessionStorage.removeItem('cooplyst_sso_redirecting');
+                });
+                setAuthError(t('sessionExpired') || 'Session expired');
+            }
+        };
+        window.addEventListener('cooplyst:unauthorized', handleUnauthorized);
+        return () => window.removeEventListener('cooplyst:unauthorized', handleUnauthorized);
+    }, [t]);
 
     useEffect(() => { fetchConfig(); }, []);
 
@@ -82,6 +122,10 @@ function App() {
                 setCurrentUser(prev => ({ ...prev, ...data }));
                 setUserAvatar(data.avatar || null);
                 setUserAvatarPixelated(data.avatar_pixelated || 0);
+                // Apply user's saved language immediately across the app
+                try {
+                    if (data.language) i18n.changeLanguage(data.language);
+                } catch (e) { /* ignore */ }
             })
             .catch(() => { });
     }, [token]);
@@ -183,7 +227,7 @@ function App() {
             setUsername(''); setEmail(''); setPassword(''); setConfirmPassword('');
             setProfileDropdownOpen(false);
             setActivePage(null);
-            setLangDropdownOpen(false);
+            // language will be applied when we fetch /api/users/me below
         } catch {
             setAuthError(t('networkError'));
         } finally {
@@ -222,25 +266,7 @@ function App() {
             {/* ── LOGIN / REGISTER ─────────────────────────────────────────── */}
             {!isLoggedIn ? (
                 <>
-                    {/* Language Switcher */}
-                    <div className="lang-switcher-container" onClick={() => setLangDropdownOpen(!langDropdownOpen)}>
-                        <Globe size={16} className="lang-icon" />
-                        <div className="lang-selected">{t('langLabel')}</div>
-                        <ChevronDown size={14} className={`lang-arrow ${langDropdownOpen ? 'open' : ''}`} />
-                        {langDropdownOpen && (
-                            <div className="lang-dropdown">
-                                {languages.map(({ code, translation }) => (
-                                    <div
-                                        key={code}
-                                        className={`lang-option ${i18n.language === code ? 'active' : ''}`}
-                                        onClick={() => i18n.changeLanguage(code)}
-                                    >
-                                        {translation.langLabel}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+
 
                     <div className="container">
                         <header className="header">

@@ -54,3 +54,7 @@ Use [docker-compose.server.yml](docker-compose.server.yml) on your server.
 	- `docker compose -f docker-compose.server.yml up -d`
 
 Data persists in volume `cooplyst_data`.
+
+## Assets / Flags
+
+Flag images used in the UI are included under `src/assets/flags`. These flag images were created and shared by DaFluffyPotato — thanks for providing them. If you want to learn more about the original pack, check the `_notes.txt` inside the `src/assets/flags` folder.

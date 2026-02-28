@@ -1,0 +1,87 @@
+/* ============================================================
+   CUSTOM SELECT — Used for dropdowns
+   ============================================================ */
+
+.custom-select-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    background: var(--panel-bg);
+    border: 3px solid var(--border-color);
+    padding: 0.6rem 0.8rem;
+    box-shadow:
+        0 0 8px rgba(74, 144, 226, 0.3),
+        inset 0 0 8px rgba(74, 144, 226, 0.2);
+    transition: all 0.2s;
+    cursor: pointer;
+    user-select: none;
+    font-family: var(--font-retro);
+    color: var(--text-primary);
+    font-size: 0.7rem;
+    min-width: 150px;
+}
+
+.custom-select-container:hover {
+    box-shadow:
+        0 0 15px rgba(74, 144, 226, 0.6),
+        inset 0 0 10px rgba(74, 144, 226, 0.4);
+}
+
+.custom-select-container.open {
+    border-color: var(--text-yellow);
+    box-shadow:
+        0 0 15px rgba(248, 231, 28, 0.4),
+        inset 0 0 10px rgba(248, 231, 28, 0.2);
+}
+
+.custom-select-value {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.custom-select-arrow {
+    color: var(--text-blue);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.custom-select-container.open .custom-select-arrow {
+    transform: rotate(180deg);
+    color: var(--text-yellow);
+}
+
+.custom-select-dropdown {
+    position: absolute;
+    top: calc(100% + 5px);
+    left: -3px;
+    right: -3px;
+    background: var(--panel-bg);
+    border: 3px solid var(--text-yellow);
+    display: flex;
+    flex-direction: column;
+    box-shadow:
+        0 0 15px rgba(248, 231, 28, 0.4),
+        inset 0 0 10px rgba(248, 231, 28, 0.2);
+    z-index: 100;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.custom-select-option {
+    padding: 0.8rem;
+    color: var(--text-primary);
+    transition: background 0.2s, color 0.2s;
+}
+
+.custom-select-option:hover {
+    background: rgba(74, 144, 226, 0.3);
+    color: var(--text-yellow);
+}
+
+.custom-select-option.active {
+    color: var(--text-yellow);
+    background: rgba(74, 144, 226, 0.1);
+}

@@ -1,4 +1,14 @@
-export function uploadWithProgress({ url, token, formData, onProgress, onAbortReady, timeoutMs = 300000 }) {
+function resolveDefaultTimeout() {
+    try {
+        const v = window?.COOPLYST_CONFIG?.upload_timeout_ms;
+        const n = Number(v);
+        if (Number.isFinite(n) && n > 0) return n;
+    } catch (e) { }
+    return 300000;
+}
+
+export function uploadWithProgress({ url, token, formData, onProgress, onAbortReady, timeoutMs }) {
+    if (!timeoutMs) timeoutMs = resolveDefaultTimeout();
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', url);
@@ -18,6 +28,9 @@ export function uploadWithProgress({ url, token, formData, onProgress, onAbortRe
 
         xhr.onload = () => {
             const data = xhr.response ?? parseJsonSafe(xhr.responseText);
+            if (xhr.status === 401) {
+                window.dispatchEvent(new Event('cooplyst:unauthorized'));
+            }
             resolve({
                 ok: xhr.status >= 200 && xhr.status < 300,
                 status: xhr.status,
@@ -33,7 +46,8 @@ export function uploadWithProgress({ url, token, formData, onProgress, onAbortRe
     });
 }
 
-export function uploadChunked({ url, token, file, onProgress, onAbortReady, timeoutMs = 300000 }) {
+export function uploadChunked({ url, token, file, onProgress, onAbortReady, timeoutMs }) {
+    if (!timeoutMs) timeoutMs = resolveDefaultTimeout();
     return new Promise(async (resolve, reject) => {
         const chunkSize = 5 * 1024 * 1024; // 5 MB chunks
         const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
@@ -84,6 +98,9 @@ export function uploadChunked({ url, token, file, onProgress, onAbortReady, time
 
                     xhr.onload = () => {
                         const data = xhr.response ?? parseJsonSafe(xhr.responseText);
+                        if (xhr.status === 401) {
+                            window.dispatchEvent(new Event('cooplyst:unauthorized'));
+                        }
                         resChunk({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
                     };
                     xhr.onerror = () => rejChunk(new Error('NETWORK_ERROR'));

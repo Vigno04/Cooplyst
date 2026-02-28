@@ -41,6 +41,14 @@
     white-space: nowrap;
 }
 
+.lang-flag {
+    width: 20px;
+    height: 14px;
+    object-fit: cover;
+    border-radius: 2px;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
 /* Dropdown arrow — rotates 180° when open */
 .lang-arrow {
     color: var(--text-blue);
@@ -84,6 +92,10 @@
     text-align: center;
 }
 
+.lang-option img {
+    vertical-align: middle;
+}
+
 .lang-option:hover {
     background: rgba(74, 144, 226, 0.3);
     color: var(--text-yellow);
@@ -104,4 +116,37 @@
     .lang-selected {
         font-size: 0.7rem;
     }
+}
+
+/* Overrides when used inside another container (e.g. Profile screen) */
+.profile-language-selector {
+    position: relative;
+    top: auto;
+    right: auto;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
+    justify-content: space-between;
+    padding: 0.8rem 1rem;
+    background: rgba(0, 0, 0, 0.6);
+    border: 2px solid #333;
+    box-shadow: none;
+}
+
+.profile-language-selector:hover {
+    box-shadow: 0 0 8px rgba(74, 144, 226, 0.5);
+    border-color: var(--text-blue);
+}
+
+.profile-language-selector .lang-selected {
+    flex-grow: 1;
+    text-align: left;
+    margin-left: 0.5rem;
+}
+
+.profile-language-selector .lang-dropdown {
+    right: -2px;
+    top: calc(100% + 4px);
+    min-width: calc(100% + 4px);
+    max-width: calc(100% + 4px);
 }

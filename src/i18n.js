@@ -4,10 +4,13 @@ import { initReactI18next } from 'react-i18next';
 import translationEN from './locales/en.json';
 import translationIT from './locales/it.json';
 
+import flagEN from './assets/flags/gb.png';
+import flagIT from './assets/flags/it.png';
+
 // Language registry: add a new entry here (+ matching locale file) to add a language
 export const languages = [
-    { code: 'en', translation: translationEN },
-    { code: 'it', translation: translationIT },
+    { code: 'en', translation: translationEN, flag: flagEN },
+    { code: 'it', translation: translationIT, flag: flagIT },
 ];
 
 const resources = Object.fromEntries(

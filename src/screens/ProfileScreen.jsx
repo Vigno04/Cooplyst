@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Save, Lock, User, Mail, AlertCircle, CheckCircle, X, ShieldCheck, ShieldOff, Loader2, Upload, Trash2, Globe, Eye, EyeOff } from 'lucide-react';
 import { languages } from '../i18n';
+import LanguageSelector from '../components/LanguageSelector';
 import { uploadWithProgress } from '../uploadWithProgress';
 
 export default function ProfileScreen({ currentUser, token, onUserUpdated, onClose, ssoLinkStatus, ssoEnabled }) {
@@ -304,17 +305,7 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
                     <div className="screen-divider">{t('profileLanguage')}</div>
                     <div className="input-group">
                         <label><Globe size={12} /> {t('profileLanguage')}</label>
-                        <select
-                            className="admin-text-input"
-                            value={language}
-                            onChange={e => setLanguage(e.target.value)}
-                            style={{ fontFamily: 'inherit', cursor: 'pointer' }}
-                        >
-                            <option value="">{t('profileLanguageDefault')}</option>
-                            {languages.map(l => (
-                                <option key={l.code} value={l.code}>{l.code.toUpperCase()}</option>
-                            ))}
-                        </select>
+                        <LanguageSelector value={language} onChange={(c) => setLanguage(c)} className="profile-language-selector" />
                     </div>
 
                     <div className="screen-divider">{t('usernameLabel')}</div>

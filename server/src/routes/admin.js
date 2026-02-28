@@ -49,6 +49,8 @@ const ALLOWED_SETTINGS = [
     'discord_enabled',
     'discord_webhook_url',
     'discord_language',
+    'upload_timeout_ms',
+    'allow_all_users_add_downloads',
 ];
 
 // GET /api/admin/settings

@@ -36,6 +36,8 @@ function getPublicConfig() {
         authentik_client_id: getSetting('authentik_client_id') || '',
         authentik_auto_redirect: getSetting('authentik_auto_redirect') === 'true',
         site_url: getSetting('site_url') || '',
+        upload_timeout_ms: Number(getSetting('upload_timeout_ms') || 300000),
+        allow_all_users_add_downloads: getSetting('allow_all_users_add_downloads') === 'true',
     };
 }
 
