@@ -71,10 +71,10 @@ app.use(helmet());
 // Parse JSON bodies (limit prevents large payload attacks)
 app.use(express.json({ limit: '10kb' }));
 
-// Rate limiting on all API routes (100 requests per 15 minutes per IP)
+// Rate limiting on all API routes (1000 requests per 15 minutes per IP)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 1000,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later' }

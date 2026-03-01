@@ -87,6 +87,20 @@ function getPlayers(gameId) {
     ).all(gameId);
 }
 
+function getMedianRating(gameId) {
+    const rows = db.prepare(
+        `SELECT rt.score FROM ratings rt
+         JOIN game_runs r ON r.id = rt.run_id
+         WHERE r.game_id = ?`
+    ).all(gameId);
+    if (rows.length === 0) return null;
+    const sorted = rows.map(r => r.score).sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0
+        ? sorted[mid]
+        : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 function populatePlayersFromVotes(gameId) {
     // Add all yes-voters as players (skip if already added)
     const yesVoters = db.prepare(
@@ -258,6 +272,7 @@ function enrichGame(game, userId) {
         user_vote: getUserVote(game.id, userId),
         players: getPlayers(game.id),
         latest_downloads: Object.values(latestDownloads),
+        median_rating: getMedianRating(game.id),
     };
     if (visibility === 'public') {
         result.voters = getVoters(game.id);
@@ -304,8 +319,13 @@ router.post('/search/test', requireAdmin, async (req, res) => {
     const { type, ...config } = req.body;
     if (!type) return res.status(400).json({ error: 'Provider type required' });
 
-    const result = await testProvider({ type, ...config });
-    res.json(result);
+    try {
+        const result = await testProvider({ type, ...config });
+        res.json(result);
+    } catch (err) {
+        console.error('[COOPLYST] Provider test error:', err.message);
+        res.status(500).json({ error: 'Provider test failed' });
+    }
 });
 
 // ── GET /api/games/:id — single game detail ─────────────────────────────────

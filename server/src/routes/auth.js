@@ -246,86 +246,96 @@ router.get('/oidc/callback', async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', (req, res) => {
-    if (getSetting('local_auth_enabled') === 'false') {
-        return res.status(403).json({ error: 'Local authentication is disabled. Please use SSO.' });
+router.post('/login', async (req, res) => {
+    try {
+        if (getSetting('local_auth_enabled') === 'false') {
+            return res.status(403).json({ error: 'Local authentication is disabled. Please use SSO.' });
+        }
+
+        const { username, password } = req.body;
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password are required' });
+        }
+
+        const user = db.prepare(
+            `SELECT id, username, email, password_hash, role FROM users WHERE username = ?`
+        ).get(username);
+
+        if (!user || !user.password_hash) {
+            // Constant-time response to prevent username enumeration
+            await bcrypt.compare(password, '$2b$12$invalidhashpadding000000000000000000000000000000000000');
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        const valid = await bcrypt.compare(password, user.password_hash);
+        if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+        const token = jwt.sign(
+            { id: user.id, username: user.username, role: user.role },
+            JWT_SECRET,
+            { expiresIn: TOKEN_EXPIRY }
+        );
+
+        res.json({
+            token,
+            user: { id: user.id, username: user.username, email: user.email, role: user.role }
+        });
+    } catch (err) {
+        console.error('[COOPLYST] Login error:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
-
-    const { username, password } = req.body;
-    if (!username || !password) {
-        return res.status(400).json({ error: 'Username and password are required' });
-    }
-
-    const user = db.prepare(
-        `SELECT id, username, email, password_hash, role FROM users WHERE username = ?`
-    ).get(username);
-
-    if (!user || !user.password_hash) {
-        // Constant-time response to prevent username enumeration
-        bcrypt.compare(password, '$2b$12$invalidhashpadding000000000000000000000000000000000000');
-        return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    const valid = bcrypt.compareSync(password, user.password_hash);
-    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
-
-    const token = jwt.sign(
-        { id: user.id, username: user.username, role: user.role },
-        JWT_SECRET,
-        { expiresIn: TOKEN_EXPIRY }
-    );
-
-    res.json({
-        token,
-        user: { id: user.id, username: user.username, email: user.email, role: user.role }
-    });
 });
 
 // POST /api/auth/register
-router.post('/register', (req, res) => {
-    if (getSetting('local_auth_enabled') === 'false') {
-        return res.status(403).json({ error: 'Local authentication is disabled. Please use SSO.' });
-    }
-
-    // Check if registration is enabled
-    const regSetting = db.prepare(`SELECT value FROM settings WHERE key = 'registration_enabled'`).get();
-    if (regSetting?.value !== 'true') {
-        return res.status(403).json({ error: 'Registration is currently disabled by the administrator' });
-    }
-
-    const { username, email, password } = req.body;
-    if (!username || !password) {
-        return res.status(400).json({ error: 'Username and password are required' });
-    }
-    if (username.toLowerCase() === 'admin') {
-        return res.status(400).json({ error: 'This username is reserved' });
-    }
-    if (password.length < 8) {
-        return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    }
-
-    const existing = db.prepare(`SELECT id FROM users WHERE username = ?`).get(username);
-    if (existing) return res.status(409).json({ error: 'Username already taken' });
-
-    const id = uuidv4();
-    const password_hash = bcrypt.hashSync(password, SALT_ROUNDS);
-
+router.post('/register', async (req, res) => {
     try {
-        db.prepare(
-            `INSERT INTO users (id, username, email, password_hash, role) VALUES (?, ?, ?, ?, 'user')`
-        ).run(id, username, email || null, password_hash);
-    } catch (err) {
-        if (err.message.includes('UNIQUE')) {
-            return res.status(409).json({ error: 'Username or email already taken' });
+        if (getSetting('local_auth_enabled') === 'false') {
+            return res.status(403).json({ error: 'Local authentication is disabled. Please use SSO.' });
         }
-        throw err;
-    }
 
-    const token = jwt.sign({ id, username, role: 'user' }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
-    res.status(201).json({
-        token,
-        user: { id, username, email: email || null, role: 'user' }
-    });
+        // Check if registration is enabled
+        const regSetting = db.prepare(`SELECT value FROM settings WHERE key = 'registration_enabled'`).get();
+        if (regSetting?.value !== 'true') {
+            return res.status(403).json({ error: 'Registration is currently disabled by the administrator' });
+        }
+
+        const { username, email, password } = req.body;
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password are required' });
+        }
+        if (username.toLowerCase() === 'admin') {
+            return res.status(400).json({ error: 'This username is reserved' });
+        }
+        if (password.length < 8) {
+            return res.status(400).json({ error: 'Password must be at least 8 characters' });
+        }
+
+        const existing = db.prepare(`SELECT id FROM users WHERE username = ?`).get(username);
+        if (existing) return res.status(409).json({ error: 'Username already taken' });
+
+        const id = uuidv4();
+        const password_hash = await bcrypt.hash(password, SALT_ROUNDS);
+
+        try {
+            db.prepare(
+                `INSERT INTO users (id, username, email, password_hash, role) VALUES (?, ?, ?, ?, 'user')`
+            ).run(id, username, email || null, password_hash);
+        } catch (err) {
+            if (err.message.includes('UNIQUE')) {
+                return res.status(409).json({ error: 'Username or email already taken' });
+            }
+            throw err;
+        }
+
+        const token = jwt.sign({ id, username, role: 'user' }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+        res.status(201).json({
+            token,
+            user: { id, username, email: email || null, role: 'user' }
+        });
+    } catch (err) {
+        console.error('[COOPLYST] Register error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
 
 module.exports = router;

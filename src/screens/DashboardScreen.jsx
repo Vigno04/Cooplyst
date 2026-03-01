@@ -21,6 +21,7 @@ function StatusBadge({ status, t }) {
 }
 
 function GameCard({ game, onClick, t }) {
+    const showMedian = game.status === 'completed' && game.median_rating !== null && game.median_rating !== undefined;
     return (
         <div className="game-card" onClick={() => onClick(game)}>
             {game.cover_url ? (
@@ -35,10 +36,16 @@ function GameCard({ game, onClick, t }) {
                 {game.genre && <p className="game-card-genre">{game.genre}</p>}
                 <div className="game-card-footer">
                     <StatusBadge status={game.status} t={t} />
-                    <span className="game-card-votes">
-                        <ThumbsUp size={13} /> {game.votes_yes}
-                        <ThumbsDown size={13} style={{ marginLeft: 6 }} /> {game.votes_no}
-                    </span>
+                    {showMedian ? (
+                        <span className="game-card-median" title={t('medianRating')}>
+                            <Star size={13} /> {Number(game.median_rating).toFixed(1)}
+                        </span>
+                    ) : (
+                        <span className="game-card-votes">
+                            <ThumbsUp size={13} /> {game.votes_yes}
+                            <ThumbsDown size={13} style={{ marginLeft: 6 }} /> {game.votes_no}
+                        </span>
+                    )}
                 </div>
             </div>
         </div>

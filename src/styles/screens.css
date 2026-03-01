@@ -1254,6 +1254,15 @@
     gap: 0.2rem;
 }
 
+.game-card-median {
+    font-size: 0.65rem;
+    color: #f5c518;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-family: var(--font-retro);
+}
+
 .game-card-downloads {
     display: flex;
     gap: 0.5rem;

@@ -62,69 +62,75 @@ router.get('/me', requireAuth, (req, res) => {
 });
 
 // PATCH /api/users/me — update username, email, or password
-router.patch('/me', requireAuth, (req, res) => {
-    const { username, email, currentPassword, newPassword, language, email_notifications } = req.body;
-
-    const user = db.prepare(
-        `SELECT id, username, password_hash FROM users WHERE id = ?`
-    ).get(req.user.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    // If changing password, verify current password first
-    if (newPassword !== undefined) {
-        if (!currentPassword) {
-            return res.status(400).json({ error: 'Current password required to set a new password' });
-        }
-        if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
-            return res.status(401).json({ error: 'Current password is incorrect' });
-        }
-        if (newPassword.length < 8) {
-            return res.status(400).json({ error: 'New password must be at least 8 characters' });
-        }
-    }
-
-    // If changing username, check it is not reserved and not taken
-    if (username !== undefined) {
-        if (username.toLowerCase() === 'admin' && user.username.toLowerCase() !== 'admin') {
-            return res.status(400).json({ error: 'This username is reserved' });
-        }
-        const conflict = db.prepare(
-            `SELECT id FROM users WHERE username = ? AND id != ?`
-        ).get(username, req.user.id);
-        if (conflict) return res.status(409).json({ error: 'Username already taken' });
-    }
-
-    const updates = [];
-    const values = [];
-
-    if (username !== undefined) { updates.push('username = ?'); values.push(username); }
-    if (email !== undefined) { updates.push('email = ?'); values.push(email || null); }
-    if (language !== undefined) { updates.push('language = ?'); values.push(language || null); }
-    if (email_notifications !== undefined) { updates.push('email_notifications = ?'); values.push(email_notifications ? 1 : 0); }
-    if (newPassword !== undefined) {
-        updates.push('password_hash = ?');
-        values.push(bcrypt.hashSync(newPassword, SALT_ROUNDS));
-    }
-
-    if (updates.length === 0) {
-        return res.status(400).json({ error: 'No fields to update' });
-    }
-
-    values.push(req.user.id);
+router.patch('/me', requireAuth, async (req, res) => {
     try {
-        db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-    } catch (err) {
-        if (err.message.includes('UNIQUE')) {
-            return res.status(409).json({ error: 'Username or email already taken' });
-        }
-        throw err;
-    }
+        const { username, email, currentPassword, newPassword, language, email_notifications } = req.body;
 
-    const updated = db.prepare(
-        `SELECT id, username, email, role, oidc_sub, password_hash, avatar, avatar_pixelated, language, email_notifications FROM users WHERE id = ?`
-    ).get(req.user.id);
-    const { oidc_sub, password_hash, ...rest } = updated;
-    res.json({ ...rest, has_sso: !!oidc_sub, has_password: !!password_hash });
+        const user = db.prepare(
+            `SELECT id, username, password_hash FROM users WHERE id = ?`
+        ).get(req.user.id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        // If changing password, verify current password first
+        if (newPassword !== undefined) {
+            if (!currentPassword) {
+                return res.status(400).json({ error: 'Current password required to set a new password' });
+            }
+            const currentValid = await bcrypt.compare(currentPassword, user.password_hash);
+            if (!currentValid) {
+                return res.status(401).json({ error: 'Current password is incorrect' });
+            }
+            if (newPassword.length < 8) {
+                return res.status(400).json({ error: 'New password must be at least 8 characters' });
+            }
+        }
+
+        // If changing username, check it is not reserved and not taken
+        if (username !== undefined) {
+            if (username.toLowerCase() === 'admin' && user.username.toLowerCase() !== 'admin') {
+                return res.status(400).json({ error: 'This username is reserved' });
+            }
+            const conflict = db.prepare(
+                `SELECT id FROM users WHERE username = ? AND id != ?`
+            ).get(username, req.user.id);
+            if (conflict) return res.status(409).json({ error: 'Username already taken' });
+        }
+
+        const updates = [];
+        const values = [];
+
+        if (username !== undefined) { updates.push('username = ?'); values.push(username); }
+        if (email !== undefined) { updates.push('email = ?'); values.push(email || null); }
+        if (language !== undefined) { updates.push('language = ?'); values.push(language || null); }
+        if (email_notifications !== undefined) { updates.push('email_notifications = ?'); values.push(email_notifications ? 1 : 0); }
+        if (newPassword !== undefined) {
+            updates.push('password_hash = ?');
+            values.push(await bcrypt.hash(newPassword, SALT_ROUNDS));
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+
+        values.push(req.user.id);
+        try {
+            db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+        } catch (err) {
+            if (err.message.includes('UNIQUE')) {
+                return res.status(409).json({ error: 'Username or email already taken' });
+            }
+            throw err;
+        }
+
+        const updated = db.prepare(
+            `SELECT id, username, email, role, oidc_sub, password_hash, avatar, avatar_pixelated, language, email_notifications FROM users WHERE id = ?`
+        ).get(req.user.id);
+        const { oidc_sub, password_hash, ...rest } = updated;
+        res.json({ ...rest, has_sso: !!oidc_sub, has_password: !!password_hash });
+    } catch (err) {
+        console.error('[COOPLYST] Profile update error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
 });
 
 // POST /api/users/me/avatar — upload profile picture
