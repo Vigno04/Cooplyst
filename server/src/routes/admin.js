@@ -8,6 +8,10 @@ const { testSmtp, testDiscord } = require('../notifications');
 
 const router = express.Router();
 
+function getSetting(key) {
+    return db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key)?.value ?? null;
+}
+
 const SERVER_PACKAGE_JSON_PATH = path.join(__dirname, '../../package.json');
 const CLIENT_PACKAGE_JSON_PATH = path.join(__dirname, '../../../package.json');
 
@@ -134,10 +138,6 @@ router.get('/info', (req, res) => {
 
 // GET /api/admin/test-sso — verify OIDC discovery & client credentials
 router.get('/test-sso', async (req, res) => {
-    function getSetting(key) {
-        return db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key)?.value ?? null;
-    }
-
     const steps = {
         config: { ok: false, detail: '' },
         discovery: { ok: false, detail: '' },

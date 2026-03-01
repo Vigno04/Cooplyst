@@ -294,8 +294,7 @@ router.post('/register', async (req, res) => {
         }
 
         // Check if registration is enabled
-        const regSetting = db.prepare(`SELECT value FROM settings WHERE key = 'registration_enabled'`).get();
-        if (regSetting?.value !== 'true') {
+        if (getSetting('registration_enabled') !== 'true') {
             return res.status(403).json({ error: 'Registration is currently disabled by the administrator' });
         }
 

@@ -1,3 +1,12 @@
+function parseJsonSafe(raw) {
+    if (!raw) return {};
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return { error: 'Invalid server response' };
+    }
+}
+
 function resolveDefaultTimeout() {
     try {
         const v = window?.COOPLYST_CONFIG?.upload_timeout_ms;
@@ -129,11 +138,3 @@ export function uploadChunked({ url, token, file, onProgress, onAbortReady, time
     });
 }
 
-function parseJsonSafe(raw) {
-    if (!raw) return {};
-    try {
-        return JSON.parse(raw);
-    } catch {
-        return { error: 'Invalid server response' };
-    }
-}

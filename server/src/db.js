@@ -179,6 +179,7 @@ seedSetting.run('vote_visibility', 'public');
 seedSetting.run('game_api_providers', '[]');
 seedSetting.run('upload_timeout_ms', '300000');
 seedSetting.run('allow_all_users_add_downloads', 'false');
+seedSetting.run('authentik_auto_register', 'true');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS game_downloads (

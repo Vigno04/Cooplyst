@@ -5,7 +5,7 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const db = require('../db');
-const { searchGames, testProvider, fetchMergedMetadata } = require('../providers');
+const { searchGames, testProvider, fetchMergedMetadata, isSet } = require('../providers');
 const { notifyGameProposed } = require('../notifications');
 
 const router = express.Router();
@@ -130,13 +130,6 @@ function hydrateGame(game) {
         videos: parseJsonSafe(game.videos, []),
         provider_payload: parseJsonSafe(game.provider_payload, {}),
     };
-}
-
-function isSet(value) {
-    if (value === null || value === undefined) return false;
-    if (typeof value === 'string') return value.trim().length > 0;
-    if (Array.isArray(value)) return value.length > 0;
-    return true;
 }
 
 function choose(currentValue, mergedValue) {
@@ -969,4 +962,5 @@ router.delete('/:id/downloads/:downloadId', (req, res) => {
     res.json(enrichGame(gameUp, req.user.id));
 });
 
-module.exports = router;
+// Delegated to games/ sub-module — see routes/games/index.js
+module.exports = require('./games/index');

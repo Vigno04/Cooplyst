@@ -602,6 +602,7 @@ async function testProvider(providerConfig) {
 }
 
 module.exports = {
+    isSet,
     searchGames,
     testProvider,
     fetchMergedMetadata,
