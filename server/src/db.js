@@ -151,8 +151,9 @@ if (!gameCols.includes('provider_payload')) db.exec('ALTER TABLE games ADD COLUM
 const runCols = db.prepare('PRAGMA table_info(game_runs)').all().map(c => c.name);
 if (!runCols.includes('name')) db.exec('ALTER TABLE game_runs ADD COLUMN name TEXT');
 
-// Migration: add language preference to users
+// Migration: add language preference and email notifications to users
 if (!userCols.includes('language')) db.exec('ALTER TABLE users ADD COLUMN language TEXT');
+if (!userCols.includes('email_notifications')) db.exec('ALTER TABLE users ADD COLUMN email_notifications INTEGER NOT NULL DEFAULT 1');
 if (!gameCols.includes('tags')) db.exec('ALTER TABLE games ADD COLUMN tags TEXT');
 if (!gameCols.includes('website')) db.exec('ALTER TABLE games ADD COLUMN website TEXT');
 

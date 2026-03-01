@@ -24,7 +24,8 @@ function getUsersByLanguage() {
     const rows = db.prepare(
         `SELECT email, COALESCE(NULLIF(TRIM(language),''), 'en') AS lang
          FROM users
-         WHERE email IS NOT NULL AND TRIM(email) != ''`
+         WHERE email IS NOT NULL AND TRIM(email) != ''
+         AND email_notifications != 0`
     ).all();
     const map = {};
     for (const row of rows) {
@@ -363,7 +364,7 @@ async function notifyGameProposed(game, siteUrl) {
                 smtpResults.push(r);
             }
             results.smtp = smtpResults.every(r => r.ok)
-                ? { ok: true,  detail: `Email sent to ${totalUsers} recipient(s)` }
+                ? { ok: true, detail: `Email sent to ${totalUsers} recipient(s)` }
                 : { ok: false, detail: smtpResults.find(r => !r.ok)?.detail || 'Partial failure' };
         }
     }

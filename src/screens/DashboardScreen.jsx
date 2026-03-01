@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, Search, ThumbsUp, ThumbsDown, Gamepad2, Trophy, Clock, Play, CheckCircle, ChevronRight, X, Star, Upload, Trash2, Loader2, Image as ImageIcon, AlertCircle, Users, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3, Download } from 'lucide-react';
+import { Plus, Search, ThumbsUp, ThumbsDown, Gamepad2, Trophy, Clock, Play, CheckCircle, ChevronRight, X, Star, Upload, Trash2, Loader2, Image as ImageIcon, AlertCircle, Users, User, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3, Download } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { uploadWithProgress, uploadChunked } from '../uploadWithProgress';
 import magnetIcon from '../assets/magnet-icon.png';
@@ -290,11 +290,15 @@ function ProposeGameModal({ token, onClose, onProposed, t }) {
 
                 {error && <div className="modal-error">{error}</div>}
 
-                {searching && (
+                {submitting && (
+                    <div className="propose-loading"><Loader2 size={24} className="spin" /> {t('loading') || 'Loading...'}</div>
+                )}
+
+                {searching && !submitting && (
                     <div className="propose-loading"><Loader2 size={24} className="spin" /> {t('searching')}</div>
                 )}
 
-                {!searching && results.length > 0 && (
+                {!searching && !submitting && results.length > 0 && (
                     <div className="propose-results">
                         {results.map((r, i) => (
                             <div key={`${r.api_id}-${i}`} className="propose-result" onClick={() => propose(r)}>
@@ -316,30 +320,32 @@ function ProposeGameModal({ token, onClose, onProposed, t }) {
                 )}
 
                 {/* Manual entry fallback */}
-                <div className="propose-manual">
-                    {!manualMode ? (
-                        <button className="btn-link" onClick={() => setManualMode(true)}>
-                            {t('manualEntry')}
-                        </button>
-                    ) : (
-                        <div className="propose-manual-form">
-                            <p className="propose-manual-label">{t('manualEntryLabel')}</p>
-                            <input
-                                type="text"
-                                placeholder={t('gameTitlePlaceholder')}
-                                value={manualTitle}
-                                onChange={e => setManualTitle(e.target.value)}
-                            />
-                            <button
-                                className="btn btn-primary btn-sm"
-                                onClick={() => propose({ title: manualTitle })}
-                                disabled={!manualTitle.trim() || submitting}
-                            >
-                                {submitting ? t('loading') : t('proposeBtn')}
+                {!submitting && (
+                    <div className="propose-manual">
+                        {!manualMode ? (
+                            <button className="btn-link" onClick={() => setManualMode(true)}>
+                                {t('manualEntry')}
                             </button>
-                        </div>
-                    )}
-                </div>
+                        ) : (
+                            <div className="propose-manual-form">
+                                <p className="propose-manual-label">{t('manualEntryLabel')}</p>
+                                <input
+                                    type="text"
+                                    placeholder={t('gameTitlePlaceholder')}
+                                    value={manualTitle}
+                                    onChange={e => setManualTitle(e.target.value)}
+                                />
+                                <button
+                                    className="btn btn-primary btn-sm"
+                                    onClick={() => propose({ title: manualTitle })}
+                                    disabled={!manualTitle.trim() || submitting}
+                                >
+                                    {submitting ? t('loading') : t('proposeBtn')}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -539,6 +545,8 @@ function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGam
     const [loading, setLoading] = useState(true);
     const [voteLoading, setVoteLoading] = useState(false);
     const [ratingScore, setRatingScore] = useState(0);
+    const [hoverRating, setHoverRating] = useState(0);
+    const [isDraggingRating, setIsDraggingRating] = useState(false);
     const [ratingComment, setRatingComment] = useState('');
     const [dragging, setDragging] = useState(false);
     const dragCounter = useRef(0);
@@ -669,15 +677,20 @@ function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGam
 
     const submitRating = async (runId) => {
         if (!ratingScore) return;
+        const numericScore = parseFloat(ratingScore);
+        if (isNaN(numericScore) || numericScore < 1 || numericScore > 10) return;
         try {
-            await fetch(`/api/games/${game.id}/runs/${runId}/rate`, {
+            const res = await fetch(`/api/games/${game.id}/runs/${runId}/rate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ score: ratingScore, comment: ratingComment }),
+                body: JSON.stringify({ score: numericScore, comment: ratingComment }),
             });
-            setRatingScore(0);
-            setRatingComment('');
-            fetchDetail();
+            if (res.ok) {
+                setRatingScore(0);
+                setRatingComment('');
+                fetchDetail();
+                window.dispatchEvent(new Event('cooplyst:rating_submitted'));
+            }
         } catch { /* ignore */ }
     };
 
@@ -1083,17 +1096,36 @@ function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGam
                                                     <span className="run-rating-count">({run.ratings.length} {t('ratings')})</span>
                                                 </div>
                                             )}
-                                            {/* Individual ratings (admin can delete) */}
-                                            {isAdmin && run.ratings && run.ratings.length > 0 && (
+                                            {/* Individual ratings */}
+                                            {run.ratings && run.ratings.length > 0 && (
                                                 <div className="run-ratings-list">
                                                     {run.ratings.map(r => (
-                                                        <div key={r.user_id} className="run-rating-item">
-                                                            <span className="run-rating-user">{r.username}</span>
-                                                            <span className="run-rating-score"><Star size={12} /> {r.score}/10</span>
-                                                            {r.comment && <span className="run-rating-comment">{r.comment}</span>}
-                                                            <button className="player-remove" onClick={() => deleteRating(run.id, r.user_id)} title={t('deleteRating')}>
-                                                                <X size={12} />
-                                                            </button>
+                                                        <div key={r.user_id} className="run-rating-item" style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', marginBottom: '0.5rem', padding: '0.5rem', background: 'rgba(0,0,0,0.1)', borderRadius: '8px' }}>
+                                                            {r.avatar ? (
+                                                                <img
+                                                                    src={`/api/avatars/${r.avatar_pixelated ? r.avatar.replace('.webp', '_pixel.webp') : r.avatar}`}
+                                                                    alt={r.username}
+                                                                    style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }}
+                                                                />
+                                                            ) : (
+                                                                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                    <User size={20} />
+                                                                </div>
+                                                            )}
+                                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                                    <span className="run-rating-user" style={{ fontWeight: 'bold' }}>{r.username}</span>
+                                                                    <span className="run-rating-score" style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--text-yellow)', fontSize: '0.8rem' }}>
+                                                                        <Star size={12} className="filled" /> {r.score}/10
+                                                                    </span>
+                                                                </div>
+                                                                {r.comment && <div className="run-rating-comment" style={{ whiteSpace: 'pre-wrap', marginTop: '0.25rem', fontSize: '0.9rem', opacity: 0.9 }}>{r.comment}</div>}
+                                                            </div>
+                                                            {isAdmin && (
+                                                                <button className="player-remove" onClick={() => deleteRating(run.id, r.user_id)} title={t('deleteRating')} style={{ alignSelf: 'center' }}>
+                                                                    <X size={14} />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -1101,22 +1133,70 @@ function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGam
                                             {/* Rating form */}
                                             {run.completed_at && (
                                                 <div className="rating-form">
-                                                    <div className="rating-stars">
-                                                        {[...Array(10)].map((_, i) => (
-                                                            <Star
-                                                                key={i}
-                                                                size={18}
-                                                                className={`rating-star ${i < ratingScore ? 'filled' : ''}`}
-                                                                onClick={() => setRatingScore(i + 1)}
-                                                            />
-                                                        ))}
+                                                    <div className="rating-input-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                                        <div
+                                                            className="rating-stars"
+                                                            style={{ display: 'flex', gap: '4px', touchAction: 'none', cursor: 'pointer' }}
+                                                            onPointerDown={(e) => {
+                                                                setIsDraggingRating(true);
+                                                                e.currentTarget.setPointerCapture(e.pointerId);
+                                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                                const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+                                                                let starIndex = Math.floor(x / 22);
+                                                                if (starIndex > 9) starIndex = 9;
+                                                                const relativeX = x - (starIndex * 22);
+                                                                const calculatedRating = starIndex + (relativeX < 9 ? 0.5 : 1);
+                                                                setRatingScore(calculatedRating);
+                                                                setHoverRating(calculatedRating);
+                                                            }}
+                                                            onPointerMove={(e) => {
+                                                                const rect = e.currentTarget.getBoundingClientRect();
+                                                                const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+                                                                let starIndex = Math.floor(x / 22);
+                                                                if (starIndex > 9) starIndex = 9;
+                                                                const relativeX = x - (starIndex * 22);
+                                                                const calculatedRating = starIndex + (relativeX < 9 ? 0.5 : 1);
+
+                                                                setHoverRating(calculatedRating);
+                                                                if (isDraggingRating) {
+                                                                    setRatingScore(calculatedRating);
+                                                                }
+                                                            }}
+                                                            onPointerUp={(e) => {
+                                                                setIsDraggingRating(false);
+                                                                e.currentTarget.releasePointerCapture(e.pointerId);
+                                                            }}
+                                                            onPointerLeave={() => {
+                                                                if (!isDraggingRating) setHoverRating(0);
+                                                            }}
+                                                        >
+                                                            {[...Array(10)].map((_, i) => {
+                                                                const starIndex = i + 1;
+                                                                const currentRating = hoverRating || ratingScore || 0;
+                                                                const isFull = currentRating >= starIndex;
+                                                                const isHalf = currentRating === starIndex - 0.5;
+
+                                                                return (
+                                                                    <div key={i} className="rating-star-wrapper" style={{ position: 'relative', width: '18px', height: '18px', pointerEvents: 'none' }}>
+                                                                        <Star size={18} className="rating-star" />
+                                                                        {(isFull || isHalf) && (
+                                                                            <div style={{ position: 'absolute', top: 0, left: 0, overflow: 'hidden', width: isHalf ? '50%' : '100%' }}>
+                                                                                <Star size={18} className="rating-star filled" />
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        <span style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{hoverRating || ratingScore || 0}/10</span>
                                                     </div>
-                                                    <input
-                                                        type="text"
+                                                    <textarea
                                                         placeholder={t('ratingCommentPlaceholder')}
                                                         value={ratingComment}
                                                         onChange={e => setRatingComment(e.target.value)}
                                                         className="rating-comment-input"
+                                                        rows={3}
+                                                        style={{ resize: 'vertical', minHeight: '60px', width: '100%', marginBottom: '0.5rem', fontFamily: 'inherit' }}
                                                     />
                                                     <button className="btn btn-primary btn-sm" onClick={() => submitRating(run.id)} disabled={!ratingScore}>
                                                         {t('submitRating')}
@@ -1484,6 +1564,20 @@ export default function DashboardScreen({ token, currentUser }) {
         window.addEventListener('hashchange', onHashChange);
         return () => window.removeEventListener('hashchange', onHashChange);
     }, [loading, games, openGameFromHash]);
+
+    // Handle custom DOM event to open a specific game (e.g. from Notifications)
+    useEffect(() => {
+        const handleOpenGameEvent = (e) => {
+            const gameId = e.detail?.gameId;
+            if (!gameId) return;
+            const targetGame = games.find(g => g.id === gameId);
+            if (targetGame) {
+                openGame(targetGame);
+            }
+        };
+        window.addEventListener('cooplyst:open_game', handleOpenGameEvent);
+        return () => window.removeEventListener('cooplyst:open_game', handleOpenGameEvent);
+    }, [games, openGame]);
     const proposed = games.filter(g => g.status === 'proposed' || g.status === 'voting');
     const backlog = games.filter(g => g.status === 'backlog');
     const playing = games.filter(g => g.status === 'playing');

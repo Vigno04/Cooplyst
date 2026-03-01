@@ -9,6 +9,7 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
     const { t } = useTranslation();
     const [username, setUsername] = useState(currentUser.username);
     const [email, setEmail] = useState(currentUser.email || '');
+    const [emailNotifications, setEmailNotifications] = useState(currentUser.email_notifications !== 0);
     const [currentPassword, setCurrentPw] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPw] = useState('');
@@ -46,6 +47,7 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
                 setAvatar(data.avatar || null);
                 setAvatarPixelated(data.avatar_pixelated || 0);
                 setLanguage(data.language || '');
+                setEmailNotifications(data.email_notifications !== 0);
             })
             .catch(() => setHasSso(false));
     }, [token]);
@@ -54,6 +56,7 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
         setUsername(currentUser.username || '');
         setEmail(currentUser.email || '');
         setLanguage(currentUser.language || '');
+        setEmailNotifications(currentUser.email_notifications !== 0);
     }, [currentUser]);
 
     // Show incoming SSO link status from redirect
@@ -77,6 +80,7 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
         if (email !== (currentUser.email || '')) body.email = email;
         if (newPassword) { body.currentPassword = currentPassword; body.newPassword = newPassword; }
         if (language !== (currentUser.language || '')) body.language = language;
+        if (emailNotifications !== (currentUser.email_notifications !== 0)) body.email_notifications = emailNotifications;
 
         if (Object.keys(body).length === 0) {
             return setStatus({ type: 'error', msg: t('profileNoChanges') });
@@ -318,6 +322,21 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
                         <input value={email} onChange={e => setEmail(e.target.value)} type="email" />
                     </div>
 
+                    <div className="admin-setting-row" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+                        <div className="admin-setting-info">
+                            <div className="admin-setting-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Mail size={12} /> {t('profileEmailNotifications') || 'EMAIL NOTIFICATIONS'}</div>
+                            <div className="admin-setting-desc">{t('profileEmailNotificationsLabel') || 'Receive email notifications'}</div>
+                        </div>
+                        <button
+                            type="button"
+                            className={`toggle-btn ${emailNotifications ? 'on' : 'off'}`}
+                            onClick={(e) => { e.preventDefault(); setEmailNotifications(!emailNotifications); }}
+                            aria-label={t('profileEmailNotificationsLabel') || 'Receive email notifications'}
+                        >
+                            {emailNotifications ? t('toggleOn') || 'ON' : t('toggleOff') || 'OFF'}
+                        </button>
+                    </div>
+
                     <div className="screen-divider">{t('profileChangePassword')}</div>
 
                     <div className="input-group">
@@ -371,43 +390,43 @@ export default function ProfileScreen({ currentUser, token, onUserUpdated, onClo
 
                 {/* ── SSO linking section ──────────────────────────────────── */}
                 {ssoEnabled && <>
-                <div className="screen-divider">{t('profileSsoSection')}</div>
-                <div className="profile-sso-row">
-                    <div className="profile-sso-status">
-                        {hasSso === null
-                            ? <Loader2 size={14} className="spin" />
-                            : hasSso
-                                ? <><CheckCircle size={14} className="sso-icon-ok" /> {t('profileSsoLinked')}</>
-                                : <><ShieldOff size={14} className="sso-icon-none" /> {t('profileSsoNotLinked')}</>
-                        }
+                    <div className="screen-divider">{t('profileSsoSection')}</div>
+                    <div className="profile-sso-row">
+                        <div className="profile-sso-status">
+                            {hasSso === null
+                                ? <Loader2 size={14} className="spin" />
+                                : hasSso
+                                    ? <><CheckCircle size={14} className="sso-icon-ok" /> {t('profileSsoLinked')}</>
+                                    : <><ShieldOff size={14} className="sso-icon-none" /> {t('profileSsoNotLinked')}</>
+                            }
+                        </div>
+                        {hasSso === false && (
+                            <button
+                                type="button"
+                                className="btn btn-secondary profile-sso-btn"
+                                onClick={handleLinkSso}
+                                disabled={ssoLoading}
+                            >
+                                <ShieldCheck size={14} />
+                                {t('profileSsoLinkBtn')}
+                            </button>
+                        )}
+                        {hasSso === true && (
+                            <button
+                                type="button"
+                                className="btn profile-sso-btn profile-sso-unlink"
+                                onClick={handleUnlinkSso}
+                                disabled={ssoLoading || !hasPassword}
+                                title={!hasPassword ? t('profileSsoUnlinkDisabled') : ''}
+                            >
+                                {ssoLoading ? <Loader2 size={14} className="spin" /> : <ShieldOff size={14} />}
+                                {t('profileSsoUnlinkBtn')}
+                            </button>
+                        )}
                     </div>
-                    {hasSso === false && (
-                        <button
-                            type="button"
-                            className="btn btn-secondary profile-sso-btn"
-                            onClick={handleLinkSso}
-                            disabled={ssoLoading}
-                        >
-                            <ShieldCheck size={14} />
-                            {t('profileSsoLinkBtn')}
-                        </button>
+                    {hasSso === true && !hasPassword && (
+                        <p className="profile-sso-warn">{t('profileSsoUnlinkDisabled')}</p>
                     )}
-                    {hasSso === true && (
-                        <button
-                            type="button"
-                            className="btn profile-sso-btn profile-sso-unlink"
-                            onClick={handleUnlinkSso}
-                            disabled={ssoLoading || !hasPassword}
-                            title={!hasPassword ? t('profileSsoUnlinkDisabled') : ''}
-                        >
-                            {ssoLoading ? <Loader2 size={14} className="spin" /> : <ShieldOff size={14} />}
-                            {t('profileSsoUnlinkBtn')}
-                        </button>
-                    )}
-                </div>
-                {hasSso === true && !hasPassword && (
-                    <p className="profile-sso-warn">{t('profileSsoUnlinkDisabled')}</p>
-                )}
                 </>}
             </div>
         </div>

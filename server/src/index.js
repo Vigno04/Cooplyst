@@ -7,6 +7,17 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
+// ── Crash logging ────────────────────────────────────────────────────────
+process.on('uncaughtException', (err) => {
+    console.error('[CRITICAL] Uncaught Exception:', err);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[CRITICAL] Unhandled Rejection at:', promise, 'reason:', reason);
+    // Optional: process.exit(1) if you want to force crash, but logging is key
+});
+
 const db = require('./db');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../data');
@@ -44,6 +55,12 @@ bootstrapAdmin();
 
 // ── Express setup ──────────────────────────────────────────────────────────
 const app = express();
+
+// Minimal request logging to track what precedes a crash
+app.use((req, res, next) => {
+    console.log(`[REQ] ${req.method} ${req.originalUrl || req.url}`);
+    next();
+});
 
 // Running behind nginx/reverse proxy in docker-compose
 app.set('trust proxy', 1);

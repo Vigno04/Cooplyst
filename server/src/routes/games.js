@@ -319,7 +319,7 @@ router.get('/:id', (req, res) => {
     const runs = db.prepare('SELECT * FROM game_runs WHERE game_id = ? ORDER BY run_number').all(game.id);
     enriched.runs = runs.map(run => {
         const ratings = db.prepare(
-            `SELECT r.*, u.username FROM ratings r JOIN users u ON u.id = r.user_id WHERE r.run_id = ? ORDER BY r.rated_at`
+            `SELECT r.*, u.username, u.avatar, u.avatar_pixelated FROM ratings r JOIN users u ON u.id = r.user_id WHERE r.run_id = ? ORDER BY r.rated_at`
         ).all(run.id);
         const avg = ratings.length > 0
             ? (ratings.reduce((s, r) => s + r.score, 0) / ratings.length).toFixed(1)
@@ -703,15 +703,21 @@ router.post('/:id/runs/:runId/rate', (req, res) => {
     const run = db.prepare('SELECT * FROM game_runs WHERE id = ? AND game_id = ?').get(req.params.runId, req.params.id);
     if (!run) return res.status(404).json({ error: 'Run not found' });
 
+    const isPlayer = db.prepare('SELECT 1 FROM game_players WHERE game_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    if (!isPlayer) {
+        return res.status(403).json({ error: 'Only players of this game can rate it' });
+    }
+
     const { score, comment } = req.body;
-    if (!score || score < 1 || score > 10) {
-        return res.status(400).json({ error: 'Score must be between 1 and 10' });
+    const numericScore = parseFloat(score);
+    if (isNaN(numericScore) || numericScore < 1 || numericScore > 10) {
+        return res.status(400).json({ error: 'Score must be a number between 1 and 10' });
     }
 
     db.prepare(
         `INSERT INTO ratings (run_id, user_id, score, comment) VALUES (?, ?, ?, ?)
          ON CONFLICT(run_id, user_id) DO UPDATE SET score = excluded.score, comment = excluded.comment, rated_at = unixepoch()`
-    ).run(run.id, req.user.id, score, comment || null);
+    ).run(run.id, req.user.id, numericScore, comment || null);
 
     res.json({ ok: true });
 });

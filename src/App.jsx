@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Gamepad2, LogIn, MonitorPlay, Globe, User, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Gamepad2, LogIn, MonitorPlay, Globe, User, Loader2, Eye, EyeOff, Bell, LogOut } from 'lucide-react';
 import authentikLogo from './assets/authentik_pixellogo.png';
 import cooplystLogo from './assets/cooplyst-icon.png';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,7 @@ import { languages } from './i18n';
 import ProfileScreen from './screens/ProfileScreen';
 import AdminScreen from './screens/AdminScreen';
 import DashboardScreen from './screens/DashboardScreen';
+import NotificationsScreen from './screens/NotificationsScreen';
 import './index.css';
 
 // Decode JWT payload without verification (verification happens server-side)
@@ -50,8 +51,12 @@ function App() {
 
     // UI state
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+    const [notificationsDropdownOpen, setNotificationsDropdownOpen] = useState(false);
     const [activePage, setActivePage] = useState(null); // null | 'profile' | 'admin'
     const [ssoLinkStatus, setSsoLinkStatus] = useState(null); // { type, msg } passed to ProfileScreen
+
+    // Notification state
+    const [notificationCount, setNotificationCount] = useState(0);
 
     // Avatar state
     const [userAvatar, setUserAvatar] = useState(null);
@@ -128,6 +133,30 @@ function App() {
                 } catch (e) { /* ignore */ }
             })
             .catch(() => { });
+
+        // Fetch initial notification count
+        fetch('/api/users/me/notifications', { headers: { 'Authorization': `Bearer ${token}` } })
+            .then(r => r.json())
+            .then(data => {
+                if (Array.isArray(data)) {
+                    setNotificationCount(data.length);
+                }
+            })
+            .catch(() => { });
+
+        // Listen for open_game event to update notification count automatically
+        const handleOpenGame = () => {
+            fetch('/api/users/me/notifications', { headers: { 'Authorization': `Bearer ${token}` } })
+                .then(r => r.json())
+                .then(data => setNotificationCount(Array.isArray(data) ? data.length : 0))
+                .catch(() => { });
+        };
+        window.addEventListener('cooplyst:open_game', handleOpenGame);
+        window.addEventListener('cooplyst:rating_submitted', handleOpenGame);
+        return () => {
+            window.removeEventListener('cooplyst:open_game', handleOpenGame);
+            window.removeEventListener('cooplyst:rating_submitted', handleOpenGame);
+        };
     }, [token]);
 
     // ── Handle SSO token / error returned in URL hash ────────────────────────
@@ -437,7 +466,7 @@ function App() {
 
                         <div
                             className="dashboard-profile"
-                            onClick={(e) => { e.stopPropagation(); setProfileDropdownOpen(p => !p); }}
+                            onClick={(e) => { e.stopPropagation(); setProfileDropdownOpen(p => !p); setNotificationsDropdownOpen(false); }}
                             title={currentUser.username}
                         >
                             {userAvatar ? (
@@ -449,14 +478,36 @@ function App() {
                             ) : (
                                 <User className="dashboard-profile-icon" size={20} />
                             )}
+                            {notificationCount > 0 && (
+                                <span className="notification-badge" style={{
+                                    position: 'absolute',
+                                    bottom: '-4px',
+                                    right: '-4px',
+                                    backgroundColor: 'var(--text-red)',
+                                    color: 'white',
+                                    fontSize: '0.7rem',
+                                    fontWeight: 'bold',
+                                    padding: '2px 6px',
+                                    borderRadius: '10px',
+                                    border: '2px solid var(--panel-bg)',
+                                }}>
+                                    {notificationCount}
+                                </span>
+                            )}
                             {profileDropdownOpen && (
                                 <div className="profile-dropdown" onClick={e => e.stopPropagation()}>
+                                    <div className="profile-option" onClick={(e) => { e.stopPropagation(); setNotificationsDropdownOpen(true); setProfileDropdownOpen(false); }}>
+                                        <Bell size={14} style={{ display: 'inline', marginRight: '6px' }} /> {t('navNotifications')} {notificationCount > 0 && `(${notificationCount})`}
+                                    </div>
                                     <div className="profile-option" onClick={(e) => navigateTo('profile', e)}>⊞ {t('navProfile')}</div>
                                     {isAdmin && (
                                         <div className="profile-option" onClick={(e) => navigateTo('admin', e)}>⚙ {t('navAdmin')}</div>
                                     )}
-                                    <div className="profile-option profile-option--logout" onClick={(e) => { e.stopPropagation(); handleLogout(); }}>⏻ {t('navLogout')}</div>
+                                    <div className="profile-option profile-option--logout" onClick={(e) => { e.stopPropagation(); handleLogout(); }}><LogOut size={14} style={{ display: 'inline', marginRight: '6px' }} /> {t('navLogout')}</div>
                                 </div>
+                            )}
+                            {notificationsDropdownOpen && (
+                                <NotificationsScreen token={token} onClose={() => setNotificationsDropdownOpen(false)} />
                             )}
                         </div>
                     </header>
