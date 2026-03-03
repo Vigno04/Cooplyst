@@ -105,7 +105,6 @@
 .btn-primary {
     color: var(--text-green);
     border-color: var(--text-green);
-    margin-top: 1rem;
 }
 
 .btn-primary:hover {

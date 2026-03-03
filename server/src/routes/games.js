@@ -258,6 +258,10 @@ function enrichGame(game, userId) {
         }
     }
 
+    // count runs and media
+    const runsCount = db.prepare('SELECT COUNT(*) as c FROM game_runs WHERE game_id = ?').get(game.id).c;
+    const mediaCount = db.prepare('SELECT COUNT(*) as c FROM media WHERE game_id = ?').get(game.id).c;
+
     const result = {
         ...hydrateGame(game),
         votes_yes: votes.yes,
@@ -266,6 +270,8 @@ function enrichGame(game, userId) {
         players: getPlayers(game.id),
         latest_downloads: Object.values(latestDownloads),
         median_rating: getMedianRating(game.id),
+        runs_count: runsCount,
+        media_count: mediaCount,
     };
     if (visibility === 'public') {
         result.voters = getVoters(game.id);

@@ -30,6 +30,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
     const [adminEditorOpen, setAdminEditorOpen] = useState(false);
     const [editingRunId, setEditingRunId] = useState(null);
     const [editingRunName, setEditingRunName] = useState('');
+    const [editingRatingRunId, setEditingRatingRunId] = useState(null);
     const [manageDownloadsOpen, setManageDownloadsOpen] = useState(false);
 
     const isAdmin = currentUser?.role === 'admin';
@@ -156,6 +157,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
             if (res.ok) {
                 setRatingScore(0);
                 setRatingComment('');
+                setEditingRatingRunId(null);
                 fetchDetail();
                 window.dispatchEvent(new Event('cooplyst:rating_submitted'));
             }
@@ -589,6 +591,21 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                                 </div>
                                                                 {r.comment && <div className="run-rating-comment" style={{ whiteSpace: 'pre-wrap', marginTop: '0.25rem', fontSize: '0.9rem', opacity: 0.9 }}>{r.comment}</div>}
                                                             </div>
+                                                            {r.user_id === currentUser?.id && editingRatingRunId !== run.id && (
+                                                                <button
+                                                                    className="player-remove"
+                                                                    title={t('editRating') || 'Edit rating'}
+                                                                    onClick={() => {
+                                                                        setEditingRatingRunId(run.id);
+                                                                        setRatingScore(r.score);
+                                                                        setHoverRating(r.score);
+                                                                        setRatingComment(r.comment || '');
+                                                                    }}
+                                                                    style={{ alignSelf: 'center', marginRight: isAdmin ? '4px' : '0' }}
+                                                                >
+                                                                    <Edit3 size={14} />
+                                                                </button>
+                                                            )}
                                                             {isAdmin && (
                                                                 <button className="player-remove" onClick={() => deleteRating(run.id, r.user_id)} title={t('deleteRating')} style={{ alignSelf: 'center' }}>
                                                                     <X size={14} />
@@ -599,7 +616,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                 </div>
                                             )}
                                             {/* Rating form */}
-                                            {run.completed_at && (
+                                            {run.completed_at && (!run.ratings?.some(r => r.user_id === currentUser?.id) || editingRatingRunId === run.id) && (
                                                 <div className="rating-form">
                                                     <div className="rating-input-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                                                         <div
@@ -666,9 +683,21 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                         rows={3}
                                                         style={{ resize: 'vertical', minHeight: '60px', width: '100%', marginBottom: '0.5rem', fontFamily: 'inherit' }}
                                                     />
-                                                    <button className="btn btn-primary btn-sm" onClick={() => submitRating(run.id)} disabled={!ratingScore}>
-                                                        {t('submitRating')}
-                                                    </button>
+                                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                                        <button className="btn btn-primary btn-sm" onClick={() => submitRating(run.id)} disabled={!ratingScore}>
+                                                            {t('submitRating')}
+                                                        </button>
+                                                        {editingRatingRunId === run.id && (
+                                                            <button className="btn btn-outline btn-sm" onClick={() => {
+                                                                setEditingRatingRunId(null);
+                                                                setRatingScore(0);
+                                                                setHoverRating(0);
+                                                                setRatingComment('');
+                                                            }}>
+                                                                {t('cancel') || 'Cancel'}
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )}
                                             <div className="run-admin-actions">

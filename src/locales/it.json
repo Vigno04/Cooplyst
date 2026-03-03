@@ -306,5 +306,17 @@
     "downloadDownload": "Scarica",
     "magnetType": "Link Magnet",
     "torrentType": "File Torrent",
-    "typeLabel": "Tipo"
+    "typeLabel": "Tipo",
+    "statsTotalGames": "Giochi Completati",
+    "statsAverageVote": "Voto Medio",
+    "statsMostVoted": "Più Votato",
+    "statsMostRuns": "Più Giocato (Partite)",
+    "statsMostPlayers": "Party Più Grande",
+    "statsMostMedia": "Più Ricordi (Media)",
+    "statsOrderList": "Ordina per",
+    "orderByDateDesc": "Più Recenti",
+    "orderByDateAsc": "Meno Recenti",
+    "orderByVoteDesc": "Voto Più Alto",
+    "orderByVoteAsc": "Voto Più Basso",
+    "statsCompletedChart": "Giochi Completati nel Tempo"
 }

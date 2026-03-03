@@ -306,5 +306,17 @@
     "downloadDownload": "Download",
     "magnetType": "Magnet Link",
     "torrentType": "Torrent File",
-    "typeLabel": "Type"
+    "typeLabel": "Type",
+    "statsTotalGames": "Total Games Completed",
+    "statsAverageVote": "Average Rating",
+    "statsMostVoted": "Most Voted",
+    "statsMostRuns": "Most Played (Runs)",
+    "statsMostPlayers": "Biggest Party",
+    "statsMostMedia": "Most Memories (Media)",
+    "statsOrderList": "Order By",
+    "orderByDateDesc": "Newest First",
+    "orderByDateAsc": "Oldest First",
+    "orderByVoteDesc": "Highest Rated",
+    "orderByVoteAsc": "Lowest Rated",
+    "statsCompletedChart": "Games Completed over Time"
 }

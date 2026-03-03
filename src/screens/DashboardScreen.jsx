@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import GameCard from '../components/GameCard';
 import GameDetailModal from '../components/GameDetailModal';
 import ProposeGameModal from '../components/ProposeGameModal';
+import CompletedView from '../components/CompletedView';
 
 export default function DashboardScreen({ token, currentUser }) {
     const { t } = useTranslation();
@@ -158,11 +159,7 @@ export default function DashboardScreen({ token, currentUser }) {
                     </div>
                 </div>
             ) : (
-                /* Completed view */
-                <div className="completed-grid">
-                    {completed.map(g => <GameCard key={g.id} game={g} onClick={openGame} t={t} />)}
-                    {completed.length === 0 && <p className="board-empty board-empty--center">{t('noCompleted')}</p>}
-                </div>
+                <CompletedView completedGames={completed} openGame={openGame} t={t} />
             )}
 
             {/* Modals */}

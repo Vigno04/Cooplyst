@@ -3,6 +3,7 @@ import StatusBadge from './StatusBadge';
 
 export default function GameCard({ game, onClick, t }) {
     const showMedian = game.status === 'completed' && game.median_rating !== null && game.median_rating !== undefined;
+    const showVotes = game.status === 'proposed' || game.status === 'voting';
     return (
         <div className="game-card" onClick={() => onClick(game)}>
             {game.cover_url ? (
@@ -21,12 +22,12 @@ export default function GameCard({ game, onClick, t }) {
                         <span className="game-card-median" title={t('medianRating')}>
                             <Star size={13} /> {Number(game.median_rating).toFixed(1)}
                         </span>
-                    ) : (
+                    ) : showVotes ? (
                         <span className="game-card-votes">
                             <ThumbsUp size={13} /> {game.votes_yes}
                             <ThumbsDown size={13} style={{ marginLeft: 6 }} /> {game.votes_no}
                         </span>
-                    )}
+                    ) : null}
                 </div>
             </div>
         </div>

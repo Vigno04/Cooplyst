@@ -218,7 +218,7 @@ router.get('/me/notifications', requireAuth, (req, res) => {
         JOIN games g ON r.game_id = g.id 
         JOIN game_players p ON p.game_id = g.id AND p.user_id = ? 
         LEFT JOIN ratings rt ON rt.run_id = r.id AND rt.user_id = ? 
-        WHERE rt.score IS NULL
+        WHERE rt.score IS NULL AND r.completed_at IS NOT NULL
         ORDER BY r.completed_at DESC, r.started_at DESC
     `).all(req.user.id, req.user.id);
     res.json(notifications);
