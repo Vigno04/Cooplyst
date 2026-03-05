@@ -79,16 +79,21 @@ router.get('/:id', (req, res) => {
 
     const enriched = enrichGame(game, req.user.id);
 
-    // Attach runs with ratings
+    // Attach runs with ratings and per-run players
     const runs = db.prepare('SELECT * FROM game_runs WHERE game_id = ? ORDER BY run_number').all(game.id);
     enriched.runs = runs.map(run => {
         const ratings = db.prepare(
             `SELECT r.*, u.username, u.avatar, u.avatar_pixelated FROM ratings r JOIN users u ON u.id = r.user_id WHERE r.run_id = ? ORDER BY r.rated_at`
         ).all(run.id);
+        const players = db.prepare(
+            `SELECT rp.user_id, rp.added_at, u.username, u.avatar, u.avatar_pixelated
+             FROM run_players rp JOIN users u ON u.id = rp.user_id
+             WHERE rp.run_id = ? ORDER BY rp.added_at`
+        ).all(run.id);
         const avg = ratings.length > 0
             ? (ratings.reduce((s, r) => s + r.score, 0) / ratings.length).toFixed(1)
             : null;
-        return { ...run, ratings, average_rating: avg };
+        return { ...run, ratings, players, average_rating: avg };
     });
 
     // Attach media
@@ -139,19 +144,32 @@ router.post('/', async (req, res) => {
 
     const normalizedTitle = title.trim();
 
+    const reproposeExistingGame = (existingId) => {
+        db.prepare('DELETE FROM votes WHERE game_id = ?').run(existingId);
+        db.prepare(`UPDATE games SET status = 'proposed', status_changed_at = unixepoch() WHERE id = ?`).run(existingId);
+        const existing = db.prepare('SELECT * FROM games WHERE id = ?').get(existingId);
+        return res.status(200).json(enrichGame(existing, req.user.id));
+    };
+
     const duplicateByTitle = db.prepare(
-        `SELECT id FROM games WHERE LOWER(TRIM(title)) = LOWER(TRIM(?)) LIMIT 1`
+        `SELECT id, status FROM games WHERE LOWER(TRIM(title)) = LOWER(TRIM(?)) LIMIT 1`
     ).get(normalizedTitle);
     if (duplicateByTitle) {
-        return res.status(409).json({ error: 'Game already exists' });
+        if (duplicateByTitle.status === 'completed') {
+            return reproposeExistingGame(duplicateByTitle.id);
+        }
+        return res.status(409).json({ error: 'Game already exists', existing_id: duplicateByTitle.id, existing_status: duplicateByTitle.status });
     }
 
     if (api_id && api_provider) {
         const duplicateByApi = db.prepare(
-            `SELECT id FROM games WHERE api_id = ? AND api_provider = ? LIMIT 1`
+            `SELECT id, status FROM games WHERE api_id = ? AND api_provider = ? LIMIT 1`
         ).get(String(api_id), String(api_provider));
         if (duplicateByApi) {
-            return res.status(409).json({ error: 'Game already exists' });
+            if (duplicateByApi.status === 'completed') {
+                return reproposeExistingGame(duplicateByApi.id);
+            }
+            return res.status(409).json({ error: 'Game already exists', existing_id: duplicateByApi.id, existing_status: duplicateByApi.status });
         }
     }
 

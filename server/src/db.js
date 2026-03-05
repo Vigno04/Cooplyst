@@ -71,6 +71,13 @@ db.exec(`
     PRIMARY KEY (game_id, user_id)
   );
 
+  CREATE TABLE IF NOT EXISTS run_players (
+    run_id     TEXT NOT NULL REFERENCES game_runs(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    added_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (run_id, user_id)
+  );
+
   CREATE TABLE IF NOT EXISTS game_players (
     game_id    TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -161,6 +168,32 @@ if (!gameCols.includes('website')) db.exec('ALTER TABLE games ADD COLUMN website
 // use a pragma trick: the column was originally NOT NULL, but that constraint is
 // not enforced by SQLite when the schema is re-read via CREATE TABLE IF NOT EXISTS.
 // For new installs the schema above already has it nullable.)
+
+// Data migration: migrate existing game_players to run_players for Run #1
+// Find games with players that don't have those players in run_players yet.
+const migratePlayers = db.prepare(`
+    SELECT gp.game_id, gp.user_id, gp.added_at
+    FROM game_players gp
+`);
+const playersToMigrate = migratePlayers.all();
+
+for (const p of playersToMigrate) {
+  // Ensure the game has at least one run
+  let run = db.prepare('SELECT id FROM game_runs WHERE game_id = ? ORDER BY run_number ASC LIMIT 1').get(p.game_id);
+  if (!run) {
+    const id = require('uuid').v4(); // Safe to require inline during startup migration
+    db.prepare('INSERT INTO game_runs (id, game_id, run_number, name) VALUES (?, ?, 1, ?)')
+      .run(id, p.game_id, 'Run #1');
+    run = { id };
+  }
+
+  // Insert to run_players
+  db.prepare('INSERT OR IGNORE INTO run_players (run_id, user_id, added_at) VALUES (?, ?, ?)')
+    .run(run.id, p.user_id, p.added_at);
+}
+
+// We leave game_players largely intact to avoid messy DROP syntax, 
+// but we just won't query it anymore.
 
 // Seed default settings if not present
 const seedSetting = db.prepare(

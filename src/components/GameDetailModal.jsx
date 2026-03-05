@@ -295,6 +295,43 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         } catch { /* ignore */ }
     };
 
+    const reproposeGame = async () => {
+        if (!window.confirm(t('reproposeGameConfirm') || 'Re-propose this game? All votes will be cleared and the status reset to proposed.')) return;
+        try {
+            const res = await fetch(`/api/games/${game.id}/repropose`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (res.ok) {
+                const updated = await res.json();
+                setGame(prev => ({ ...prev, ...updated }));
+                onGameUpdated(updated);
+            }
+        } catch { /* ignore */ }
+    };
+
+    const addRunPlayer = async (runId, userId) => {
+        try {
+            const res = await fetch(`/api/games/${game.id}/runs/${runId}/players`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ user_id: userId }),
+            });
+            if (res.ok) fetchDetail();
+        } catch { /* ignore */ }
+    };
+
+    const removeRunPlayer = async (runId, userId) => {
+        try {
+            await fetch(`/api/games/${game.id}/runs/${runId}/players/${userId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            fetchDetail();
+        } catch { /* ignore */ }
+    };
+
+
     const refreshMetadata = async () => {
         try {
             const res = await fetch(`/api/games/${game.id}/metadata/refresh`, {
@@ -370,6 +407,14 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                             <RefreshCcw size={14} /> {t('adminMenuRefreshMetadata')}
                                         </button>
                                         <div className="detail-admin-menu-divider" />
+                                        {game.status === 'completed' && (
+                                            <>
+                                                <button onClick={() => { reproposeGame(); setAdminMenuOpen(false); }}>
+                                                    <RefreshCcw size={14} /> {t('reproposeGame') || 'Re-propose Game'}
+                                                </button>
+                                                <div className="detail-admin-menu-divider" />
+                                            </>
+                                        )}
                                         {statuses.map(s => (
                                             <button key={s} disabled={game.status === s} onClick={() => { changeStatus(s); setAdminMenuOpen(false); }}>
                                                 {t(`status_${s}`)}
@@ -430,6 +475,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                     <p className="detail-proposed-by">
                                         {t('proposedBy')} <strong>{game.proposed_by_username}</strong>
                                     </p>
+
                                     {game.website && (
                                         <a href={game.website} target="_blank" rel="noopener noreferrer" className="detail-website">
                                             <ExternalLink size={12} /> {t('officialWebsite')}
@@ -560,7 +606,47 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                     <span className="run-status run-active"><Play size={14} /> {t('inProgress')}</span>
                                                 )}
                                             </div>
-                                            {run.average_rating && (
+                                        {/* Run players */}
+                                        <div className="run-players">
+                                            {(run.players || []).map(p => (
+                                                <div key={p.user_id} className="run-player-avatar-wrap" title={p.username}>
+                                                    {p.avatar ? (
+                                                        <img
+                                                            src={`/api/avatars/${p.avatar_pixelated ? p.avatar.replace('.webp', '_pixel.webp') : p.avatar}`}
+                                                            alt={p.username}
+                                                            className="run-player-avatar"
+                                                        />
+                                                    ) : (
+                                                        <div className="run-player-avatar run-player-avatar--placeholder">
+                                                            <User size={13} />
+                                                        </div>
+                                                    )}
+                                                    {isAdmin && (
+                                                        <button
+                                                            className="run-player-remove"
+                                                            onClick={() => removeRunPlayer(run.id, p.user_id)}
+                                                            title={t('removePlayer')}
+                                                        >
+                                                            <X size={9} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            {isAdmin && (
+                                                <CustomSelect
+                                                    value=""
+                                                    onChange={(userId) => { if (userId) addRunPlayer(run.id, userId); }}
+                                                    options={[
+                                                        { value: '', label: t('addPlayer') || '\u2014 Add player \u2014' },
+                                                        ...allUsers
+                                                            .filter(u => !(run.players || []).some(p => p.user_id === u.id))
+                                                            .map(u => ({ value: u.id, label: u.username }))
+                                                    ]}
+                                                    className="run-player-select"
+                                                />
+                                            )}
+                                        </div>
+                                        {run.average_rating && (
                                                 <div className="run-avg-rating">
                                                     <Star size={14} /> {run.average_rating}/10
                                                     <span className="run-rating-count">({run.ratings.length} {t('ratings')})</span>
@@ -726,76 +812,6 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                     )}
                                 </div>
                             )}
-
-                            {/* Players */}
-                            <div className="detail-section">
-                                <h3><Users size={16} /> {t('playersSection')}</h3>
-                                {(game.players || []).length > 0 ? (
-                                    <div className="player-list">
-                                        {game.players.map(p => (
-                                            <div key={p.user_id} className="player-chip">
-                                                {p.avatar ? (
-                                                    <img src={`/api/avatars/${p.avatar}`} alt="" className="player-avatar" />
-                                                ) : (
-                                                    <Users size={14} className="player-avatar-placeholder" />
-                                                )}
-                                                <span className="player-name">{p.username}</span>
-                                                {isAdmin && (
-                                                    <button
-                                                        className="player-remove"
-                                                        title={t('removePlayer')}
-                                                        onClick={async () => {
-                                                            try {
-                                                                const res = await fetch(`/api/games/${game.id}/players/${p.user_id}`, {
-                                                                    method: 'DELETE',
-                                                                    headers: { 'Authorization': `Bearer ${token}` },
-                                                                });
-                                                                if (res.ok) {
-                                                                    const data = await res.json();
-                                                                    setGame(prev => ({ ...prev, players: data.players }));
-                                                                }
-                                                            } catch { /* ignore */ }
-                                                        }}
-                                                    >
-                                                        <X size={12} />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="players-empty">{t('noPlayers')}</p>
-                                )}
-                                {isAdmin && game.status === 'playing' && (() => {
-                                    const playerIds = new Set((game.players || []).map(p => p.user_id));
-                                    const available = allUsers.filter(u => !playerIds.has(u.id));
-                                    if (available.length === 0) return null;
-                                    return (
-                                        <div className="player-add-row">
-                                            <CustomSelect
-                                                className="player-add-select"
-                                                value=""
-                                                placeholder={t('addPlayer')}
-                                                options={available.map(u => ({ value: u.id, label: u.username }))}
-                                                onChange={async (userId) => {
-                                                    if (!userId) return;
-                                                    try {
-                                                        const res = await fetch(`/api/games/${game.id}/players`, {
-                                                            method: 'POST',
-                                                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                                                            body: JSON.stringify({ user_id: userId }),
-                                                        });
-                                                        if (res.ok) {
-                                                            const data = await res.json();
-                                                            setGame(prev => ({ ...prev, players: data.players }));
-                                                        }
-                                                    } catch { /* ignore */ }
-                                                }}
-                                            />
-                                        </div>
-                                    );
-                                })()}
-                            </div>
 
                             {/* Media */}
                             <div
@@ -989,6 +1005,6 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                     />
                 )}
             </div>
-        </div>
+        </div >
     );
 }

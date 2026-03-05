@@ -78,13 +78,13 @@ function getVoters(gameId) {
     ).all(gameId);
 }
 
-function getPlayers(gameId) {
+function getPlayers(runId) {
     return db.prepare(
-        `SELECT gp.user_id, gp.added_at, u.username, u.avatar
-         FROM game_players gp JOIN users u ON u.id = gp.user_id
-         WHERE gp.game_id = ?
-         ORDER BY gp.added_at`
-    ).all(gameId);
+        `SELECT rp.user_id, rp.added_at, u.username, u.avatar
+         FROM run_players rp JOIN users u ON u.id = rp.user_id
+         WHERE rp.run_id = ?
+         ORDER BY rp.added_at`
+    ).all(runId);
 }
 
 function getMedianRating(gameId) {
@@ -101,16 +101,17 @@ function getMedianRating(gameId) {
         : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function populatePlayersFromVotes(gameId) {
+function populatePlayersFromVotes(gameId, runId) {
+    if (!runId) return;
     // Add all yes-voters as players (skip if already added)
     const yesVoters = db.prepare(
         `SELECT user_id FROM votes WHERE game_id = ? AND vote = 1`
     ).all(gameId);
     const insert = db.prepare(
-        `INSERT OR IGNORE INTO game_players (game_id, user_id) VALUES (?, ?)`
+        `INSERT OR IGNORE INTO run_players (run_id, user_id) VALUES (?, ?)`
     );
     for (const v of yesVoters) {
-        insert.run(gameId, v.user_id);
+        insert.run(runId, v.user_id);
     }
 }
 
@@ -267,7 +268,6 @@ function enrichGame(game, userId) {
         votes_yes: votes.yes,
         votes_no: votes.no,
         user_vote: getUserVote(game.id, userId),
-        players: getPlayers(game.id),
         latest_downloads: Object.values(latestDownloads),
         median_rating: getMedianRating(game.id),
         runs_count: runsCount,
@@ -277,6 +277,40 @@ function enrichGame(game, userId) {
         result.voters = getVoters(game.id);
     }
     return result;
+}
+
+function getFullGame(gameId, userId) {
+    const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
+    if (!game) return null;
+
+    const enriched = enrichGame(game, userId);
+
+    // Attach runs with ratings and players
+    const runs = db.prepare('SELECT * FROM game_runs WHERE game_id = ? ORDER BY run_number').all(game.id);
+    enriched.runs = runs.map(run => {
+        const ratings = db.prepare(
+            `SELECT r.*, u.username, u.avatar, u.avatar_pixelated FROM ratings r JOIN users u ON u.id = r.user_id WHERE r.run_id = ? ORDER BY r.rated_at`
+        ).all(run.id);
+        const avg = ratings.length > 0
+            ? (ratings.reduce((s, r) => s + r.score, 0) / ratings.length).toFixed(1)
+            : null;
+        const players = getPlayers(run.id);
+        return { ...run, ratings, average_rating: avg, players };
+    });
+
+    // Attach media
+    enriched.media = db.prepare(
+        `SELECT m.*, u.username as uploaded_by_username, u.avatar as uploaded_by_avatar
+         FROM media m JOIN users u ON u.id = m.uploaded_by
+         WHERE m.game_id = ?
+         ORDER BY m.uploaded_at DESC`
+    ).all(game.id);
+
+    // Attach proposer username
+    const proposer = db.prepare('SELECT username FROM users WHERE id = ?').get(game.proposed_by);
+    enriched.proposed_by_username = proposer?.username || 'Unknown';
+
+    return enriched;
 }
 
 // All game routes require authentication
@@ -329,36 +363,9 @@ router.post('/search/test', requireAdmin, async (req, res) => {
 
 // ── GET /api/games/:id — single game detail ─────────────────────────────────
 router.get('/:id', (req, res) => {
-    const game = db.prepare('SELECT * FROM games WHERE id = ?').get(req.params.id);
-    if (!game) return res.status(404).json({ error: 'Game not found' });
-
-    const enriched = enrichGame(game, req.user.id);
-
-    // Attach runs with ratings
-    const runs = db.prepare('SELECT * FROM game_runs WHERE game_id = ? ORDER BY run_number').all(game.id);
-    enriched.runs = runs.map(run => {
-        const ratings = db.prepare(
-            `SELECT r.*, u.username, u.avatar, u.avatar_pixelated FROM ratings r JOIN users u ON u.id = r.user_id WHERE r.run_id = ? ORDER BY r.rated_at`
-        ).all(run.id);
-        const avg = ratings.length > 0
-            ? (ratings.reduce((s, r) => s + r.score, 0) / ratings.length).toFixed(1)
-            : null;
-        return { ...run, ratings, average_rating: avg };
-    });
-
-    // Attach media
-    enriched.media = db.prepare(
-        `SELECT m.*, u.username as uploaded_by_username, u.avatar as uploaded_by_avatar
-         FROM media m JOIN users u ON u.id = m.uploaded_by
-         WHERE m.game_id = ?
-         ORDER BY m.uploaded_at DESC`
-    ).all(game.id);
-
-    // Attach proposer username
-    const proposer = db.prepare('SELECT username FROM users WHERE id = ?').get(game.proposed_by);
-    enriched.proposed_by_username = proposer?.username || 'Unknown';
-
-    res.json(enriched);
+    const fullGame = getFullGame(req.params.id, req.user.id);
+    if (!fullGame) return res.status(404).json({ error: 'Game not found' });
+    res.json(fullGame);
 });
 
 // ── POST /api/games — propose a new game ────────────────────────────────────
@@ -395,17 +402,27 @@ router.post('/', async (req, res) => {
     const normalizedTitle = title.trim();
 
     const duplicateByTitle = db.prepare(
-        `SELECT id FROM games WHERE LOWER(TRIM(title)) = LOWER(TRIM(?)) LIMIT 1`
+        `SELECT id, status FROM games WHERE LOWER(TRIM(title)) = LOWER(TRIM(?)) LIMIT 1`
     ).get(normalizedTitle);
     if (duplicateByTitle) {
+        if (duplicateByTitle.status === 'completed') {
+            db.prepare('DELETE FROM votes WHERE game_id = ?').run(duplicateByTitle.id);
+            db.prepare(`UPDATE games SET status = 'proposed', status_changed_at = unixepoch() WHERE id = ?`).run(duplicateByTitle.id);
+            return res.status(200).json(getFullGame(duplicateByTitle.id, req.user.id));
+        }
         return res.status(409).json({ error: 'Game already exists' });
     }
 
     if (api_id && api_provider) {
         const duplicateByApi = db.prepare(
-            `SELECT id FROM games WHERE api_id = ? AND api_provider = ? LIMIT 1`
+            `SELECT id, status FROM games WHERE api_id = ? AND api_provider = ? LIMIT 1`
         ).get(String(api_id), String(api_provider));
         if (duplicateByApi) {
+            if (duplicateByApi.status === 'completed') {
+                db.prepare('DELETE FROM votes WHERE game_id = ?').run(duplicateByApi.id);
+                db.prepare(`UPDATE games SET status = 'proposed', status_changed_at = unixepoch() WHERE id = ?`).run(duplicateByApi.id);
+                return res.status(200).json(getFullGame(duplicateByApi.id, req.user.id));
+            }
             return res.status(409).json({ error: 'Game already exists' });
         }
     }
@@ -465,7 +482,7 @@ router.post('/', async (req, res) => {
         proposedByUsername: proposer?.username || 'Someone',
     }, siteUrl).catch(err => console.warn('[COOPLYST] Notification error:', err.message));
 
-    res.status(201).json(enrichGame(game, req.user.id));
+    res.status(201).json(getFullGame(game.id, req.user.id));
 });
 
 // ── POST /api/games/:id/metadata/refresh — refresh from providers (admin) ──
@@ -476,7 +493,7 @@ router.post('/:id/metadata/refresh', requireAdmin, async (req, res) => {
     try {
         const refreshed = await refreshGameMetadata(game);
         if (!refreshed) return res.status(400).json({ error: 'No metadata available from providers' });
-        return res.json(enrichGame(refreshed, req.user.id));
+        return res.json(getFullGame(refreshed.id, req.user.id));
     } catch (err) {
         console.error('[COOPLYST] Metadata refresh error:', err.message);
         return res.status(500).json({ error: 'Metadata refresh failed' });
@@ -546,7 +563,7 @@ router.patch('/:id/metadata', requireAdmin, (req, res) => {
     });
 
     const updated = db.prepare('SELECT * FROM games WHERE id = ?').get(game.id);
-    return res.json(enrichGame(updated, req.user.id));
+    return res.json(getFullGame(updated.id, req.user.id));
 });
 
 // ── POST /api/games/:id/vote — cast or change vote ──────────────────────────
@@ -580,12 +597,18 @@ router.post('/:id/vote', (req, res) => {
     if (yes >= threshold) {
         const wasPromoted = db.prepare(`UPDATE games SET status = 'backlog', status_changed_at = unixepoch() WHERE id = ? AND status IN ('proposed', 'voting')`).run(game.id);
         if (wasPromoted.changes > 0) {
-            populatePlayersFromVotes(game.id);
+            let run = db.prepare('SELECT id FROM game_runs WHERE game_id = ? ORDER BY run_number ASC LIMIT 1').get(game.id);
+            if (!run) {
+                const runId = uuidv4();
+                db.prepare('INSERT INTO game_runs (id, game_id, run_number, name) VALUES (?, ?, 1, ?)').run(runId, game.id, 'Run #1');
+                run = { id: runId };
+            }
+            populatePlayersFromVotes(game.id, run.id);
         }
     }
 
     const updated = db.prepare('SELECT * FROM games WHERE id = ?').get(game.id);
-    res.json(enrichGame(updated, req.user.id));
+    res.json(getFullGame(updated.id, req.user.id));
 });
 
 // ── PATCH /api/games/:id/status — force state transition (admin) ────────────
@@ -603,19 +626,22 @@ router.patch('/:id/status', requireAdmin, (req, res) => {
 
     // Auto-populate yes-voters when moving into backlog or playing
     if ((status === 'backlog' || status === 'playing') && (game.status === 'proposed' || game.status === 'voting')) {
-        populatePlayersFromVotes(game.id);
-    }
-
-    // If moving to 'playing', auto-create a run if none exist
-    if (status === 'playing') {
+        let run = db.prepare('SELECT id FROM game_runs WHERE game_id = ? ORDER BY run_number ASC LIMIT 1').get(game.id);
+        if (!run) {
+            const runId = uuidv4();
+            db.prepare('INSERT INTO game_runs (id, game_id, run_number, name) VALUES (?, ?, 1, ?)').run(runId, game.id, 'Run #1');
+            run = { id: runId };
+        }
+        populatePlayersFromVotes(game.id, run.id);
+    } else if (status === 'playing') {
         const existingRuns = db.prepare('SELECT COUNT(*) as c FROM game_runs WHERE game_id = ?').get(game.id).c;
         if (existingRuns === 0) {
-            db.prepare('INSERT INTO game_runs (id, game_id, run_number) VALUES (?, ?, 1)').run(uuidv4(), game.id);
+            db.prepare('INSERT INTO game_runs (id, game_id, run_number, name) VALUES (?, ?, 1, ?)').run(uuidv4(), game.id, 'Run #1');
         }
     }
 
     const updated = db.prepare('SELECT * FROM games WHERE id = ?').get(game.id);
-    res.json(enrichGame(updated, req.user.id));
+    res.json(getFullGame(updated.id, req.user.id));
 });
 
 // ── DELETE /api/games/:id — delete game (admin) ─────────────────────────────
@@ -634,10 +660,13 @@ router.delete('/:id', requireAdmin, (req, res) => {
     res.json({ ok: true });
 });
 
-// ── POST /api/games/:id/players — add a player ─────────────────────────────
-router.post('/:id/players', requireAdmin, (req, res) => {
+// ── POST /api/games/:id/runs/:runId/players — add a player ─────────────────────────────
+router.post('/:id/runs/:runId/players', requireAdmin, (req, res) => {
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(req.params.id);
     if (!game) return res.status(404).json({ error: 'Game not found' });
+
+    const run = db.prepare('SELECT * FROM game_runs WHERE id = ? AND game_id = ?').get(req.params.runId, req.params.id);
+    if (!run) return res.status(404).json({ error: 'Run not found' });
 
     const { user_id } = req.body;
     if (!user_id) return res.status(400).json({ error: 'user_id is required' });
@@ -647,20 +676,24 @@ router.post('/:id/players', requireAdmin, (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     db.prepare(
-        `INSERT OR IGNORE INTO game_players (game_id, user_id) VALUES (?, ?)`
-    ).run(game.id, user_id);
+        `INSERT OR IGNORE INTO run_players (run_id, user_id) VALUES (?, ?)`
+    ).run(run.id, user_id);
 
-    res.json({ ok: true, players: getPlayers(game.id) });
+    res.json({ ok: true, players: getPlayers(run.id) });
 });
 
-// ── DELETE /api/games/:id/players/:userId — remove a player ─────────────────
-router.delete('/:id/players/:userId', requireAdmin, (req, res) => {
+// ── DELETE /api/games/:id/runs/:runId/players/:userId — remove a player ─────────────────
+router.delete('/:id/runs/:runId/players/:userId', requireAdmin, (req, res) => {
     const game = db.prepare('SELECT * FROM games WHERE id = ?').get(req.params.id);
     if (!game) return res.status(404).json({ error: 'Game not found' });
 
-    db.prepare('DELETE FROM game_players WHERE game_id = ? AND user_id = ?').run(game.id, req.params.userId);
-    res.json({ ok: true, players: getPlayers(game.id) });
+    const run = db.prepare('SELECT * FROM game_runs WHERE id = ? AND game_id = ?').get(req.params.runId, req.params.id);
+    if (!run) return res.status(404).json({ error: 'Run not found' });
+
+    db.prepare('DELETE FROM run_players WHERE run_id = ? AND user_id = ?').run(run.id, req.params.userId);
+    res.json({ ok: true, players: getPlayers(run.id) });
 });
+
 
 // ── POST /api/games/:id/runs — start a new run ─────────────────────────────
 router.post('/:id/runs', requireAdmin, (req, res) => {

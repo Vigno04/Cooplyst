@@ -65,7 +65,14 @@ module.exports = function registerVoteRoutes(router) {
         if (status === 'playing') {
             const existingRuns = db.prepare('SELECT COUNT(*) as c FROM game_runs WHERE game_id = ?').get(game.id).c;
             if (existingRuns === 0) {
-                db.prepare('INSERT INTO game_runs (id, game_id, run_number) VALUES (?, ?, 1)').run(uuidv4(), game.id);
+                const newRunId = uuidv4();
+                db.prepare('INSERT INTO game_runs (id, game_id, run_number) VALUES (?, ?, 1)').run(newRunId, game.id);
+                // Auto-populate run_players from yes-voters
+                const yesVoters = db.prepare('SELECT user_id FROM votes WHERE game_id = ? AND vote = 1').all(game.id);
+                const insertPlayer = db.prepare('INSERT OR IGNORE INTO run_players (run_id, user_id) VALUES (?, ?)');
+                for (const v of yesVoters) {
+                    insertPlayer.run(newRunId, v.user_id);
+                }
             }
         }
 
@@ -84,6 +91,19 @@ module.exports = function registerVoteRoutes(router) {
         if (game.status === 'voting') {
             db.prepare(`UPDATE games SET status = 'proposed', status_changed_at = unixepoch() WHERE id = ?`).run(game.id);
         }
+
+        const updated = db.prepare('SELECT * FROM games WHERE id = ?').get(game.id);
+        res.json(enrichGame(updated, req.user.id));
+    });
+
+    // ── POST /api/games/:id/repropose — re-propose a completed game (admin) ──
+    router.post('/:id/repropose', requireAdmin, (req, res) => {
+        const game = db.prepare('SELECT * FROM games WHERE id = ?').get(req.params.id);
+        if (!game) return res.status(404).json({ error: 'Game not found' });
+
+        // Clear all votes and reset status to proposed
+        db.prepare('DELETE FROM votes WHERE game_id = ?').run(game.id);
+        db.prepare(`UPDATE games SET status = 'proposed', status_changed_at = unixepoch() WHERE id = ?`).run(game.id);
 
         const updated = db.prepare('SELECT * FROM games WHERE id = ?').get(game.id);
         res.json(enrichGame(updated, req.user.id));

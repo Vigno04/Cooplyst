@@ -318,5 +318,12 @@
     "orderByDateAsc": "Oldest First",
     "orderByVoteDesc": "Highest Rated",
     "orderByVoteAsc": "Lowest Rated",
-    "statsCompletedChart": "Games Completed over Time"
+    "statsCompletedChart": "Games Completed over Time",
+    "reproposeGame": "Re-propose Game",
+    "reproposeGameConfirm": "Re-propose this game? All votes will be cleared and its status will be reset to proposed.",
+    "editRating": "Edit rating",
+    "gameAlreadyExists": "This game already exists in your list.",
+    "gameAlreadyCompleted": "This game is already in your completed list.",
+    "openGameToRepropose": "\u2192 Open game to re-propose",
+    "openExistingGame": "\u2192 View game"
 }

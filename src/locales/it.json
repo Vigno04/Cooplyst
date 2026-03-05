@@ -318,5 +318,12 @@
     "orderByDateAsc": "Meno Recenti",
     "orderByVoteDesc": "Voto Più Alto",
     "orderByVoteAsc": "Voto Più Basso",
-    "statsCompletedChart": "Giochi Completati nel Tempo"
+    "statsCompletedChart": "Giochi Completati nel Tempo",
+    "reproposeGame": "Riproponi Gioco",
+    "reproposeGameConfirm": "Riproponi questo gioco? Tutti i voti verranno cancellati e lo stato verrà reimpostato su 'proposto'.",
+    "editRating": "Modifica voto",
+    "gameAlreadyExists": "Questo gioco esiste gi\u00e0 nella tua lista.",
+    "gameAlreadyCompleted": "Questo gioco \u00e8 gi\u00e0 nella lista dei completati.",
+    "openGameToRepropose": "\u2192 Apri il gioco per riproporre",
+    "openExistingGame": "\u2192 Visualizza gioco"
 }

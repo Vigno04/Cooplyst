@@ -27,12 +27,26 @@ function getVoters(gameId) {
 }
 
 function getPlayers(gameId) {
+    // Aggregate unique players across all runs for this game (used for stats)
     return db.prepare(
-        `SELECT gp.user_id, gp.added_at, u.username, u.avatar
-         FROM game_players gp JOIN users u ON u.id = gp.user_id
-         WHERE gp.game_id = ?
-         ORDER BY gp.added_at`
+        `SELECT rp.user_id, MIN(rp.added_at) as added_at, u.username, u.avatar
+         FROM run_players rp
+         JOIN game_runs gr ON gr.id = rp.run_id
+         JOIN users u ON u.id = rp.user_id
+         WHERE gr.game_id = ?
+         GROUP BY rp.user_id
+         ORDER BY MIN(rp.added_at)`
     ).all(gameId);
+}
+
+function getRunPlayers(runId) {
+    return db.prepare(
+        `SELECT rp.user_id, rp.added_at, u.username, u.avatar, u.avatar_pixelated
+         FROM run_players rp
+         JOIN users u ON u.id = rp.user_id
+         WHERE rp.run_id = ?
+         ORDER BY rp.added_at`
+    ).all(runId);
 }
 
 function getMedianRating(gameId) {
@@ -227,6 +241,7 @@ module.exports = {
     getUserVote,
     getVoters,
     getPlayers,
+    getRunPlayers,
     getMedianRating,
     populatePlayersFromVotes,
     parseJsonSafe,

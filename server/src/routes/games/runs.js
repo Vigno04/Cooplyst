@@ -15,6 +15,13 @@ module.exports = function registerRunRoutes(router) {
         const id = uuidv4();
         db.prepare('INSERT INTO game_runs (id, game_id, run_number, name) VALUES (?, ?, ?, ?)').run(id, game.id, runNumber, runName);
 
+        // Auto-populate run_players from all yes-voters for this game
+        const yesVoters = db.prepare('SELECT user_id FROM votes WHERE game_id = ? AND vote = 1').all(game.id);
+        const insertPlayer = db.prepare('INSERT OR IGNORE INTO run_players (run_id, user_id) VALUES (?, ?)');
+        for (const v of yesVoters) {
+            insertPlayer.run(id, v.user_id);
+        }
+
         // Auto-transition to playing
         if (game.status !== 'playing') {
             db.prepare(`UPDATE games SET status = 'playing', status_changed_at = unixepoch() WHERE id = ?`).run(game.id);
@@ -63,9 +70,9 @@ module.exports = function registerRunRoutes(router) {
         const run = db.prepare('SELECT * FROM game_runs WHERE id = ? AND game_id = ?').get(req.params.runId, req.params.id);
         if (!run) return res.status(404).json({ error: 'Run not found' });
 
-        const isPlayer = db.prepare('SELECT 1 FROM game_players WHERE game_id = ? AND user_id = ?').get(req.params.id, req.user.id);
+        const isPlayer = db.prepare('SELECT 1 FROM run_players WHERE run_id = ? AND user_id = ?').get(run.id, req.user.id);
         if (!isPlayer) {
-            return res.status(403).json({ error: 'Only players of this game can rate it' });
+            return res.status(403).json({ error: 'Only players of this run can rate it' });
         }
 
         const { score, comment } = req.body;
@@ -106,5 +113,41 @@ module.exports = function registerRunRoutes(router) {
     router.delete('/:id/runs/:runId/ratings/:userId', requireAdmin, (req, res) => {
         db.prepare('DELETE FROM ratings WHERE run_id = ? AND user_id = ?').run(req.params.runId, req.params.userId);
         res.json({ ok: true });
+    });
+
+    // ── POST /api/games/:id/runs/:runId/players — add a player to a run (admin)
+    router.post('/:id/runs/:runId/players', requireAdmin, (req, res) => {
+        const run = db.prepare('SELECT * FROM game_runs WHERE id = ? AND game_id = ?').get(req.params.runId, req.params.id);
+        if (!run) return res.status(404).json({ error: 'Run not found' });
+
+        const { user_id } = req.body;
+        if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+
+        const user = db.prepare('SELECT id FROM users WHERE id = ?').get(user_id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        db.prepare('INSERT OR IGNORE INTO run_players (run_id, user_id) VALUES (?, ?)').run(run.id, user_id);
+
+        const players = db.prepare(
+            `SELECT rp.user_id, rp.added_at, u.username, u.avatar, u.avatar_pixelated
+             FROM run_players rp JOIN users u ON u.id = rp.user_id
+             WHERE rp.run_id = ? ORDER BY rp.added_at`
+        ).all(run.id);
+        res.json({ ok: true, players });
+    });
+
+    // ── DELETE /api/games/:id/runs/:runId/players/:userId — remove a player from a run (admin)
+    router.delete('/:id/runs/:runId/players/:userId', requireAdmin, (req, res) => {
+        const run = db.prepare('SELECT * FROM game_runs WHERE id = ? AND game_id = ?').get(req.params.runId, req.params.id);
+        if (!run) return res.status(404).json({ error: 'Run not found' });
+
+        db.prepare('DELETE FROM run_players WHERE run_id = ? AND user_id = ?').run(run.id, req.params.userId);
+
+        const players = db.prepare(
+            `SELECT rp.user_id, rp.added_at, u.username, u.avatar, u.avatar_pixelated
+             FROM run_players rp JOIN users u ON u.id = rp.user_id
+             WHERE rp.run_id = ? ORDER BY rp.added_at`
+        ).all(run.id);
+        res.json({ ok: true, players });
     });
 };

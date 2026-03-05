@@ -36,7 +36,13 @@ export default function DashboardScreen({ token, currentUser }) {
     };
 
     const handleProposed = (game) => {
-        setGames(prev => [game, ...prev]);
+        setGames(prev => {
+            const existing = prev.find(g => g.id === game.id);
+            if (existing) {
+                return prev.map(g => g.id === game.id ? { ...g, ...game } : g);
+            }
+            return [game, ...prev];
+        });
     };
 
     const openGame = useCallback((game) => {
@@ -168,6 +174,11 @@ export default function DashboardScreen({ token, currentUser }) {
                     token={token}
                     onClose={() => setShowPropose(false)}
                     onProposed={handleProposed}
+                    onOpenGame={(gameId) => {
+                        setShowPropose(false);
+                        const game = games.find(g => g.id === gameId);
+                        if (game) openGame(game);
+                    }}
                     t={t}
                 />
             )}

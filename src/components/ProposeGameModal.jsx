@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, X, Loader2, Gamepad2 } from 'lucide-react';
 
-export default function ProposeGameModal({ token, onClose, onProposed, t }) {
+export default function ProposeGameModal({ token, onClose, onProposed, onOpenGame, t }) {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
     const [searching, setSearching] = useState(false);
@@ -9,6 +9,7 @@ export default function ProposeGameModal({ token, onClose, onProposed, t }) {
     const [manualTitle, setManualTitle] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
+    const [conflictGame, setConflictGame] = useState(null); // { id, status }
 
     // Debounced search
     useEffect(() => {
@@ -36,6 +37,7 @@ export default function ProposeGameModal({ token, onClose, onProposed, t }) {
     const propose = async (gameData) => {
         setSubmitting(true);
         setError('');
+        setConflictGame(null);
         try {
             const res = await fetch('/api/games', {
                 method: 'POST',
@@ -44,7 +46,14 @@ export default function ProposeGameModal({ token, onClose, onProposed, t }) {
             });
             if (!res.ok) {
                 const data = await res.json();
-                setError(data.error || t('networkError'));
+                if (res.status === 409 && data.existing_id) {
+                    setConflictGame({ id: data.existing_id, status: data.existing_status });
+                    setError(data.existing_status === 'completed'
+                        ? t('gameAlreadyCompleted') || 'This game is already in your completed list.'
+                        : t('gameAlreadyExists') || 'This game already exists in your list.');
+                } else {
+                    setError(data.error || t('networkError'));
+                }
                 return;
             }
             const game = await res.json();
@@ -76,7 +85,21 @@ export default function ProposeGameModal({ token, onClose, onProposed, t }) {
                     />
                 </div>
 
-                {error && <div className="modal-error">{error}</div>}
+                {error && (
+                    <div className="modal-error">
+                        {error}
+                        {conflictGame && (
+                            <button
+                                className="btn-link modal-error-action"
+                                onClick={() => { onClose(); onOpenGame && onOpenGame(conflictGame.id); }}
+                            >
+                                {conflictGame.status === 'completed'
+                                    ? (t('openGameToRepropose') || '\u2192 Open game to re-propose')
+                                    : (t('openExistingGame') || '\u2192 View game')}
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 {submitting && (
                     <div className="propose-loading"><Loader2 size={24} className="spin" /> {t('loading') || 'Loading...'}</div>
