@@ -37,14 +37,20 @@ function formatRunDate(value) {
     return new Date(value * 1000).toLocaleDateString();
 }
 
+function createRatingDraft(score = 0, comment = '') {
+    return {
+        score,
+        hover: 0,
+        comment,
+        isDragging: false,
+    };
+}
+
 export default function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGameUpdated, t }) {
     const [game, setGame] = useState(initialGame);
     const [loading, setLoading] = useState(true);
     const [voteLoading, setVoteLoading] = useState(false);
-    const [ratingScore, setRatingScore] = useState(0);
-    const [hoverRating, setHoverRating] = useState(0);
-    const [isDraggingRating, setIsDraggingRating] = useState(false);
-    const [ratingComment, setRatingComment] = useState('');
+    const [ratingDrafts, setRatingDrafts] = useState({});
     const [dragging, setDragging] = useState(false);
     const dragCounter = useRef(0);
     const [mediaUploads, setMediaUploads] = useState([]);
@@ -113,6 +119,25 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
             setAdminUploadDate(getCurrentDateInputValue());
         }
     }, [isAdmin, currentUser?.id, adminUploadUserId, adminUploadDate]);
+
+    const updateRatingDraft = useCallback((runId, updates) => {
+        setRatingDrafts(prev => {
+            const current = prev[runId] || createRatingDraft();
+            const nextDraft = typeof updates === 'function'
+                ? updates(current)
+                : { ...current, ...updates };
+            return { ...prev, [runId]: nextDraft };
+        });
+    }, []);
+
+    const resetRatingDraft = useCallback((runId) => {
+        setRatingDrafts(prev => {
+            if (!prev[runId]) return prev;
+            const next = { ...prev };
+            delete next[runId];
+            return next;
+        });
+    }, []);
 
     const castVote = async (vote) => {
         setVoteLoading(true);
@@ -200,19 +225,19 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
     };
 
     const submitRating = async (runId) => {
-        if (!ratingScore) return;
-        const numericScore = parseFloat(ratingScore);
+        const draft = ratingDrafts[runId] || createRatingDraft();
+        if (!draft.score) return;
+        const numericScore = parseFloat(draft.score);
         if (isNaN(numericScore) || numericScore < 1 || numericScore > 10) return;
         try {
             const res = await fetch(`/api/games/${game.id}/runs/${runId}/rate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ score: numericScore, comment: ratingComment }),
+                body: JSON.stringify({ score: numericScore, comment: draft.comment }),
             });
             if (res.ok) {
-                setRatingScore(0);
-                setRatingComment('');
-                setEditingRatingRunId(null);
+                resetRatingDraft(runId);
+                setEditingRatingRunId(prev => (prev === runId ? null : prev));
                 fetchDetail();
                 window.dispatchEvent(new Event('cooplyst:rating_submitted'));
             }
@@ -689,7 +714,10 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                             {(game.status === 'playing' || game.status === 'completed' || game.status === 'backlog') && (
                                 <div className="detail-section">
                                     <h3><Play size={16} /> {t('runsSection')}</h3>
-                                    {(game.runs || []).map(run => (
+                                    {(game.runs || []).map(run => {
+                                        const ratingDraft = ratingDrafts[run.id] || createRatingDraft();
+
+                                        return (
                                         <div key={run.id} className="run-card">
                                             <div className="run-header">
                                                 <div className="run-header-main">
@@ -760,9 +788,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                                     title={t('editRating') || 'Edit rating'}
                                                                     onClick={() => {
                                                                         setEditingRatingRunId(run.id);
-                                                                        setRatingScore(r.score);
-                                                                        setHoverRating(r.score);
-                                                                        setRatingComment(r.comment || '');
+                                                                        updateRatingDraft(run.id, createRatingDraft(r.score, r.comment || ''));
                                                                     }}
                                                                     style={{ alignSelf: 'center', marginRight: isAdmin ? '4px' : '0' }}
                                                                 >
@@ -786,7 +812,6 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                             className="rating-stars"
                                                             style={{ display: 'flex', gap: '4px', touchAction: 'none', cursor: 'pointer' }}
                                                             onPointerDown={(e) => {
-                                                                setIsDraggingRating(true);
                                                                 e.currentTarget.setPointerCapture(e.pointerId);
                                                                 const rect = e.currentTarget.getBoundingClientRect();
                                                                 const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
@@ -794,8 +819,11 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                                 if (starIndex > 9) starIndex = 9;
                                                                 const relativeX = x - (starIndex * 22);
                                                                 const calculatedRating = starIndex + (relativeX < 9 ? 0.5 : 1);
-                                                                setRatingScore(calculatedRating);
-                                                                setHoverRating(calculatedRating);
+                                                                updateRatingDraft(run.id, {
+                                                                    score: calculatedRating,
+                                                                    hover: calculatedRating,
+                                                                    isDragging: true,
+                                                                });
                                                             }}
                                                             onPointerMove={(e) => {
                                                                 const rect = e.currentTarget.getBoundingClientRect();
@@ -805,22 +833,25 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                                 const relativeX = x - (starIndex * 22);
                                                                 const calculatedRating = starIndex + (relativeX < 9 ? 0.5 : 1);
 
-                                                                setHoverRating(calculatedRating);
-                                                                if (isDraggingRating) {
-                                                                    setRatingScore(calculatedRating);
-                                                                }
+                                                                updateRatingDraft(run.id, current => ({
+                                                                    ...current,
+                                                                    hover: calculatedRating,
+                                                                    ...(current.isDragging ? { score: calculatedRating } : {}),
+                                                                }));
                                                             }}
                                                             onPointerUp={(e) => {
-                                                                setIsDraggingRating(false);
+                                                                updateRatingDraft(run.id, { isDragging: false });
                                                                 e.currentTarget.releasePointerCapture(e.pointerId);
                                                             }}
                                                             onPointerLeave={() => {
-                                                                if (!isDraggingRating) setHoverRating(0);
+                                                                updateRatingDraft(run.id, current => (
+                                                                    current.isDragging ? current : { ...current, hover: 0 }
+                                                                ));
                                                             }}
                                                         >
                                                             {[...Array(10)].map((_, i) => {
                                                                 const starIndex = i + 1;
-                                                                const currentRating = hoverRating || ratingScore || 0;
+                                                                const currentRating = ratingDraft.hover || ratingDraft.score || 0;
                                                                 const isFull = currentRating >= starIndex;
                                                                 const isHalf = currentRating === starIndex - 0.5;
 
@@ -836,26 +867,24 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                                 );
                                                             })}
                                                         </div>
-                                                        <span style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{hoverRating || ratingScore || 0}/10</span>
+                                                        <span style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{ratingDraft.hover || ratingDraft.score || 0}/10</span>
                                                     </div>
                                                     <textarea
                                                         placeholder={t('ratingCommentPlaceholder')}
-                                                        value={ratingComment}
-                                                        onChange={e => setRatingComment(e.target.value)}
+                                                        value={ratingDraft.comment}
+                                                        onChange={e => updateRatingDraft(run.id, { comment: e.target.value })}
                                                         className="rating-comment-input"
                                                         rows={3}
                                                         style={{ resize: 'vertical', minHeight: '60px', width: '100%', marginBottom: '0.5rem', fontFamily: 'inherit' }}
                                                     />
                                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                                        <button className="btn btn-primary btn-sm" onClick={() => submitRating(run.id)} disabled={!ratingScore}>
+                                                        <button className="btn btn-primary btn-sm" onClick={() => submitRating(run.id)} disabled={!ratingDraft.score}>
                                                             {t('submitRating')}
                                                         </button>
                                                         {editingRatingRunId === run.id && (
                                                             <button className="btn btn-outline btn-sm" onClick={() => {
                                                                 setEditingRatingRunId(null);
-                                                                setRatingScore(0);
-                                                                setHoverRating(0);
-                                                                setRatingComment('');
+                                                                resetRatingDraft(run.id);
                                                             }}>
                                                                 {t('cancel') || 'Cancel'}
                                                             </button>
@@ -864,7 +893,8 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                 </div>
                                             )}
                                         </div>
-                                    ))}
+                                    );
+                                    })}
                                     {isAdmin && (
                                         <button className="btn btn-sm btn-outline" onClick={startRun} style={{ marginTop: '0.5rem' }}>
                                             <Play size={14} /> {t('startNewRun')}

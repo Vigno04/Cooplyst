@@ -82,6 +82,17 @@ function getCompletedOn(gameId) {
     return row?.completed_at ?? null;
 }
 
+function getStartedOn(gameId) {
+    const row = db.prepare(
+        `SELECT started_at
+         FROM game_runs
+         WHERE game_id = ?
+         ORDER BY started_at ASC, run_number ASC
+         LIMIT 1`
+    ).get(gameId);
+    return row?.started_at ?? null;
+}
+
 function populatePlayersFromVotes(gameId) {
     // Add all yes-voters as players (skip if already added)
     const yesVoters = db.prepare(
@@ -250,6 +261,7 @@ function enrichGame(game, userId) {
         runs_count: getRunsCount(game.id),
         media_count: getMediaCount(game.id),
         completed_on: getCompletedOn(game.id),
+        started_on: getStartedOn(game.id),
     };
     if (visibility === 'public') {
         result.voters = getVoters(game.id);
@@ -268,6 +280,7 @@ module.exports = {
     getRunsCount,
     getMediaCount,
     getCompletedOn,
+    getStartedOn,
     populatePlayersFromVotes,
     parseJsonSafe,
     hydrateGame,
