@@ -8,6 +8,29 @@ import StatusBadge from './StatusBadge';
 import AdminMetadataEditor from './AdminMetadataEditor';
 import ManageDownloadsModal from './ManageDownloadsModal';
 
+function toDateTimeLocalValue(unixSeconds) {
+    if (!unixSeconds) return '';
+    const date = new Date(unixSeconds * 1000);
+    const local = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+    return local.toISOString().slice(0, 16);
+}
+
+function getCurrentDateTimeLocalValue() {
+    return toDateTimeLocalValue(Math.floor(Date.now() / 1000));
+}
+
+function parseDateTimeLocalValue(value) {
+    if (!value) return null;
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return Math.floor(parsed.getTime() / 1000);
+}
+
+function formatUnixDateTime(unixSeconds) {
+    if (!unixSeconds) return null;
+    return new Date(unixSeconds * 1000).toLocaleString();
+}
+
 export default function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGameUpdated, t }) {
     const [game, setGame] = useState(initialGame);
     const [loading, setLoading] = useState(true);
@@ -28,10 +51,14 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
     const [allUsers, setAllUsers] = useState([]);
     const [adminMenuOpen, setAdminMenuOpen] = useState(false);
     const [adminEditorOpen, setAdminEditorOpen] = useState(false);
-    const [editingRunId, setEditingRunId] = useState(null);
-    const [editingRunName, setEditingRunName] = useState('');
+    const [manageRunsOpen, setManageRunsOpen] = useState(false);
+    const [editingRunDraft, setEditingRunDraft] = useState(null);
     const [editingRatingRunId, setEditingRatingRunId] = useState(null);
     const [manageDownloadsOpen, setManageDownloadsOpen] = useState(false);
+    const [manageMediaOpen, setManageMediaOpen] = useState(false);
+    const [editingMediaDraft, setEditingMediaDraft] = useState(null);
+    const [adminUploadUserId, setAdminUploadUserId] = useState(currentUser?.id || '');
+    const [adminUploadDate, setAdminUploadDate] = useState(getCurrentDateTimeLocalValue());
 
     const isAdmin = currentUser?.role === 'admin';
     const canManageDownloads = isAdmin || window?.COOPLYST_CONFIG?.allow_all_users_add_downloads === true;
@@ -70,6 +97,16 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         document.addEventListener('click', close);
         return () => document.removeEventListener('click', close);
     }, [adminMenuOpen]);
+
+    useEffect(() => {
+        if (!isAdmin) return;
+        if (!adminUploadUserId && currentUser?.id) {
+            setAdminUploadUserId(currentUser.id);
+        }
+        if (!adminUploadDate) {
+            setAdminUploadDate(getCurrentDateTimeLocalValue());
+        }
+    }, [isAdmin, currentUser?.id, adminUploadUserId, adminUploadDate]);
 
     const castVote = async (vote) => {
         setVoteLoading(true);
@@ -123,23 +160,35 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         } catch { /* ignore */ }
     };
 
-    const saveRunName = async (runId) => {
-        const name = editingRunName.trim();
-        if (!name) return;
+    const openRunEditor = (run) => {
+        setEditingRunDraft({
+            id: run.id,
+            name: run.name || `${t('runLabel')} #${run.run_number}`,
+            startedAt: toDateTimeLocalValue(run.started_at),
+            completedAt: toDateTimeLocalValue(run.completed_at),
+        });
+    };
+
+    const saveRunDetails = async () => {
+        if (!editingRunDraft) return;
+        const name = editingRunDraft.name.trim();
+        const startedAt = parseDateTimeLocalValue(editingRunDraft.startedAt);
+        const completedAt = editingRunDraft.completedAt ? parseDateTimeLocalValue(editingRunDraft.completedAt) : null;
+        if (!name || !startedAt) return;
+        if (editingRunDraft.completedAt && !completedAt) return;
         try {
-            const res = await fetch(`/api/games/${game.id}/runs/${runId}`, {
+            const res = await fetch(`/api/games/${game.id}/runs/${editingRunDraft.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ name }),
+                body: JSON.stringify({
+                    name,
+                    started_at: startedAt,
+                    completed_at: completedAt,
+                }),
             });
             if (res.ok) {
-                const updatedRun = await res.json();
-                setGame(prev => ({
-                    ...prev,
-                    runs: (prev.runs || []).map(r => r.id === updatedRun.id ? { ...r, name: updatedRun.name } : r),
-                }));
-                setEditingRunId(null);
-                setEditingRunName('');
+                setEditingRunDraft(null);
+                fetchDetail();
             }
         } catch { /* ignore */ }
     };
@@ -164,7 +213,16 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         } catch { /* ignore */ }
     };
 
-    const uploadMedia = async (file) => {
+    const getAdminMediaUploadFields = () => {
+        if (!isAdmin) return {};
+        const uploadedAt = parseDateTimeLocalValue(adminUploadDate);
+        return {
+            uploaded_by: adminUploadUserId || currentUser?.id,
+            uploaded_at: uploadedAt || Math.floor(Date.now() / 1000),
+        };
+    };
+
+    const uploadMedia = async (file, extraFields = {}) => {
         const uploadId = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
         setMediaUploads(prev => [...prev, { id: uploadId, name: file.name, progress: 0, error: null }]);
         try {
@@ -172,6 +230,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                 url: `/api/games/${game.id}/media`,
                 token,
                 file,
+                extraFields,
                 onProgress: (pct) => {
                     setMediaUploads(prev => prev.map(u => u.id === uploadId ? { ...u, progress: pct } : u));
                 },
@@ -203,6 +262,44 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         }
     };
 
+    const queueMediaFiles = (files) => {
+        const extraFields = getAdminMediaUploadFields();
+        files.forEach(f => {
+            if (f.type.startsWith('image/') || f.type.startsWith('video/')) {
+                uploadMedia(f, extraFields);
+            }
+        });
+    };
+
+    const openMediaEditor = (media) => {
+        setEditingMediaDraft({
+            id: media.id,
+            uploadedBy: media.uploaded_by,
+            uploadedAt: toDateTimeLocalValue(media.uploaded_at),
+        });
+    };
+
+    const saveMediaDetails = async () => {
+        if (!editingMediaDraft) return;
+        const uploadedAt = parseDateTimeLocalValue(editingMediaDraft.uploadedAt);
+        if (!editingMediaDraft.uploadedBy || !uploadedAt) return;
+
+        try {
+            const res = await fetch(`/api/games/${game.id}/media/${editingMediaDraft.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    uploaded_by: editingMediaDraft.uploadedBy,
+                    uploaded_at: uploadedAt,
+                }),
+            });
+            if (res.ok) {
+                setEditingMediaDraft(null);
+                fetchDetail();
+            }
+        } catch { /* ignore */ }
+    };
+
     const cancelMediaUpload = (uploadId) => {
         const abortFn = mediaUploadAbortMapRef.current.get(uploadId);
         if (abortFn) abortFn();
@@ -229,12 +326,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         e.stopPropagation();
         setDragging(false);
         dragCounter.current = 0;
-        const files = [...(e.dataTransfer.files || [])];
-        files.forEach(f => {
-            if (f.type.startsWith('image/') || f.type.startsWith('video/')) {
-                uploadMedia(f);
-            }
-        });
+        queueMediaFiles([...(e.dataTransfer.files || [])]);
     };
 
     const deleteMedia = async (mediaId) => {
@@ -243,6 +335,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` },
             });
+            if (editingMediaDraft?.id === mediaId) setEditingMediaDraft(null);
             fetchDetail();
         } catch { /* ignore */ }
     };
@@ -397,9 +490,16 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                         <Download size={14} /> {t('manageDownloads') || 'Manage Downloads'}
                                     </button>
                                 )}
-                                {isAdmin && canManageDownloads && <div className="detail-admin-menu-divider" />}
                                 {isAdmin && (
                                     <>
+                                        {canManageDownloads && <div className="detail-admin-menu-divider" />}
+                                        <button onClick={() => { setManageRunsOpen(true); setEditingRunDraft(null); setAdminMenuOpen(false); }}>
+                                            <Play size={14} /> {t('adminMenuManageRuns') || 'Manage runs'}
+                                        </button>
+                                        <button onClick={() => { setManageMediaOpen(true); setEditingMediaDraft(null); setAdminMenuOpen(false); }}>
+                                            <ImageIcon size={14} /> {t('adminMenuManageMedia') || 'Manage media'}
+                                        </button>
+                                        <div className="detail-admin-menu-divider" />
                                         <button onClick={() => { setAdminEditorOpen(true); setAdminMenuOpen(false); }}>
                                             <Edit3 size={14} /> {t('adminMenuEditMetadata')}
                                         </button>
@@ -586,66 +686,37 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                     {(game.runs || []).map(run => (
                                         <div key={run.id} className="run-card">
                                             <div className="run-header">
-                                                {isAdmin && editingRunId === run.id ? (
-                                                    <div className="run-name-edit">
-                                                        <input
-                                                            type="text"
-                                                            value={editingRunName}
-                                                            onChange={(e) => setEditingRunName(e.target.value)}
-                                                            className="rating-comment-input"
-                                                        />
-                                                        <button className="btn btn-sm btn-outline" onClick={() => saveRunName(run.id)}>{t('saveRunName')}</button>
-                                                        <button className="btn btn-sm btn-outline" onClick={() => { setEditingRunId(null); setEditingRunName(''); }}>{t('cancelRunName')}</button>
-                                                    </div>
-                                                ) : (
+                                                <div className="run-header-main">
                                                     <span className="run-label">{run.name || `${t('runLabel')} #${run.run_number}`}</span>
-                                                )}
+                                                    <div className="run-date-list">
+                                                        <span>{t('runStartedAt') || 'Started'}: {formatUnixDateTime(run.started_at)}</span>
+                                                        <span>{t('runCompletedAt') || 'Completed'}: {formatUnixDateTime(run.completed_at) || (t('notCompletedYet') || 'Not completed')}</span>
+                                                    </div>
+                                                </div>
                                                 {run.completed_at ? (
                                                     <span className="run-status run-done"><CheckCircle size={14} /> {t('completed')}</span>
                                                 ) : (
                                                     <span className="run-status run-active"><Play size={14} /> {t('inProgress')}</span>
                                                 )}
                                             </div>
-                                        {/* Run players */}
-                                        <div className="run-players">
-                                            {(run.players || []).map(p => (
-                                                <div key={p.user_id} className="run-player-avatar-wrap" title={p.username}>
-                                                    {p.avatar ? (
-                                                        <img
-                                                            src={`/api/avatars/${p.avatar_pixelated ? p.avatar.replace('.webp', '_pixel.webp') : p.avatar}`}
-                                                            alt={p.username}
-                                                            className="run-player-avatar"
-                                                        />
-                                                    ) : (
-                                                        <div className="run-player-avatar run-player-avatar--placeholder">
-                                                            <User size={13} />
-                                                        </div>
-                                                    )}
-                                                    {isAdmin && (
-                                                        <button
-                                                            className="run-player-remove"
-                                                            onClick={() => removeRunPlayer(run.id, p.user_id)}
-                                                            title={t('removePlayer')}
-                                                        >
-                                                            <X size={9} />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            ))}
-                                            {isAdmin && (
-                                                <CustomSelect
-                                                    value=""
-                                                    onChange={(userId) => { if (userId) addRunPlayer(run.id, userId); }}
-                                                    options={[
-                                                        { value: '', label: t('addPlayer') || '\u2014 Add player \u2014' },
-                                                        ...allUsers
-                                                            .filter(u => !(run.players || []).some(p => p.user_id === u.id))
-                                                            .map(u => ({ value: u.id, label: u.username }))
-                                                    ]}
-                                                    className="run-player-select"
-                                                />
-                                            )}
-                                        </div>
+                                            {/* Run players */}
+                                            <div className="run-players">
+                                                {(run.players || []).map(p => (
+                                                    <div key={p.user_id} className="run-player-avatar-wrap" title={p.username}>
+                                                        {p.avatar ? (
+                                                            <img
+                                                                src={`/api/avatars/${p.avatar_pixelated ? p.avatar.replace('.webp', '_pixel.webp') : p.avatar}`}
+                                                                alt={p.username}
+                                                                className="run-player-avatar"
+                                                            />
+                                                        ) : (
+                                                            <div className="run-player-avatar run-player-avatar--placeholder">
+                                                                <User size={13} />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
                                         {run.average_rating && (
                                                 <div className="run-avg-rating">
                                                     <Star size={14} /> {run.average_rating}/10
@@ -786,23 +857,6 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                     </div>
                                                 </div>
                                             )}
-                                            <div className="run-admin-actions">
-                                                {isAdmin && editingRunId !== run.id && (
-                                                    <button className="btn btn-sm btn-outline" onClick={() => { setEditingRunId(run.id); setEditingRunName(run.name || `${t('runLabel')} #${run.run_number}`); }}>
-                                                        <Edit3 size={14} /> {t('editRunName')}
-                                                    </button>
-                                                )}
-                                                {!run.completed_at && isAdmin && (
-                                                    <button className="btn btn-sm btn-outline" onClick={() => completeRun(run.id)}>
-                                                        <CheckCircle size={14} /> {t('completeRun')}
-                                                    </button>
-                                                )}
-                                                {isAdmin && (
-                                                    <button className="btn btn-sm btn-danger" onClick={() => deleteRun(run.id)}>
-                                                        <Trash2 size={14} /> {t('deleteRun')}
-                                                    </button>
-                                                )}
-                                            </div>
                                         </div>
                                     ))}
                                     {isAdmin && (
@@ -887,11 +941,14 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                         ) : (
                                                             <video src={`/api/media/${m.filename}`} className="media-thumb" />
                                                         )}
-                                                        {(m.uploaded_by === currentUser?.id || isAdmin) && (
-                                                            <button className="media-delete" onClick={(e) => { e.stopPropagation(); deleteMedia(m.id); }}>
-                                                                <Trash2 size={12} />
-                                                            </button>
-                                                        )}
+                                                        <div className="media-item-footer">
+                                                            <span className="media-item-date">{formatUnixDateTime(m.uploaded_at)}</span>
+                                                            {m.uploaded_by === currentUser?.id && (
+                                                                <button className="media-delete" onClick={(e) => { e.stopPropagation(); deleteMedia(m.id); }}>
+                                                                    <Trash2 size={12} />
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 ))}
                                             </div>
@@ -902,7 +959,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                     <label className="btn btn-sm btn-outline media-upload-btn">
                                         <Upload size={14} /> {t('uploadMedia')}
                                         <input type="file" accept="image/*,video/*" multiple hidden onChange={e => {
-                                            [...(e.target.files || [])].forEach(f => uploadMedia(f));
+                                            queueMediaFiles([...(e.target.files || [])]);
                                             e.target.value = '';
                                         }} />
                                     </label>
@@ -991,6 +1048,274 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                     }}
                     t={t}
                 />
+                {manageRunsOpen && (
+                    <div className="modal-overlay" onClick={() => { setManageRunsOpen(false); setEditingRunDraft(null); }}>
+                        <div className="modal-content modal-detail modal-admin-manage" onClick={e => e.stopPropagation()}>
+                            <div className="modal-header">
+                                <h2>{t('adminManageRuns') || 'Manage Runs'}</h2>
+                                <button className="modal-close" onClick={() => { setManageRunsOpen(false); setEditingRunDraft(null); }} aria-label="Close"><X size={20} /></button>
+                            </div>
+                            <div className="admin-manage-toolbar">
+                                <button className="btn btn-sm btn-outline" onClick={startRun}>
+                                    <Play size={14} /> {t('startNewRun')}
+                                </button>
+                            </div>
+                            {(game.runs || []).length === 0 ? (
+                                <p className="players-empty">{t('noRunsYet') || 'No runs yet'}</p>
+                            ) : (
+                                <div className="admin-manage-stack">
+                                    {(game.runs || []).map(run => (
+                                        <div key={run.id} className="run-card">
+                                            <div className="run-header">
+                                                <div className="run-header-main">
+                                                    <span className="run-label">{run.name || `${t('runLabel')} #${run.run_number}`}</span>
+                                                    <div className="run-date-list">
+                                                        <span>{t('runStartedAt') || 'Started'}: {formatUnixDateTime(run.started_at)}</span>
+                                                        <span>{t('runCompletedAt') || 'Completed'}: {formatUnixDateTime(run.completed_at) || (t('notCompletedYet') || 'Not completed')}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="run-header-actions">
+                                                    {run.completed_at ? (
+                                                        <span className="run-status run-done"><CheckCircle size={14} /> {t('completed')}</span>
+                                                    ) : (
+                                                        <span className="run-status run-active"><Play size={14} /> {t('inProgress')}</span>
+                                                    )}
+                                                    <button className="btn btn-sm btn-outline" onClick={() => openRunEditor(run)}>
+                                                        <Edit3 size={14} /> {t('editRunDetails') || 'Edit run details'}
+                                                    </button>
+                                                    {!run.completed_at && (
+                                                        <button className="btn btn-sm btn-outline" onClick={() => completeRun(run.id)}>
+                                                            <CheckCircle size={14} /> {t('completeRun')}
+                                                        </button>
+                                                    )}
+                                                    <button className="btn btn-sm btn-danger" onClick={() => deleteRun(run.id)}>
+                                                        <Trash2 size={14} /> {t('deleteRun')}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="run-players">
+                                                {(run.players || []).map(p => (
+                                                    <div key={p.user_id} className="run-player-avatar-wrap" title={p.username}>
+                                                        {p.avatar ? (
+                                                            <img
+                                                                src={`/api/avatars/${p.avatar_pixelated ? p.avatar.replace('.webp', '_pixel.webp') : p.avatar}`}
+                                                                alt={p.username}
+                                                                className="run-player-avatar"
+                                                            />
+                                                        ) : (
+                                                            <div className="run-player-avatar run-player-avatar--placeholder">
+                                                                <User size={13} />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {editingRunDraft?.id === run.id && (
+                                                <div className="run-editor-card">
+                                                    <div className="run-editor-grid">
+                                                        <label className="run-editor-field">
+                                                            <span>{t('editRunName') || 'Run name'}</span>
+                                                            <input
+                                                                type="text"
+                                                                value={editingRunDraft.name}
+                                                                onChange={(e) => setEditingRunDraft(prev => ({ ...prev, name: e.target.value }))}
+                                                                className="rating-comment-input"
+                                                            />
+                                                        </label>
+                                                        <label className="run-editor-field">
+                                                            <span>{t('runStartedAt') || 'Started at'}</span>
+                                                            <input
+                                                                type="datetime-local"
+                                                                value={editingRunDraft.startedAt}
+                                                                onChange={(e) => setEditingRunDraft(prev => ({ ...prev, startedAt: e.target.value }))}
+                                                                className="rating-comment-input"
+                                                            />
+                                                        </label>
+                                                        <label className="run-editor-field">
+                                                            <span>{t('runCompletedAt') || 'Completed at'}</span>
+                                                            <input
+                                                                type="datetime-local"
+                                                                value={editingRunDraft.completedAt}
+                                                                onChange={(e) => setEditingRunDraft(prev => ({ ...prev, completedAt: e.target.value }))}
+                                                                className="rating-comment-input"
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                    <div className="run-editor-subtitle">{t('playersSection')}</div>
+                                                    <div className="run-players run-players--editing">
+                                                        {(run.players || []).map(p => (
+                                                            <div key={p.user_id} className="run-player-avatar-wrap" title={p.username}>
+                                                                {p.avatar ? (
+                                                                    <img
+                                                                        src={`/api/avatars/${p.avatar_pixelated ? p.avatar.replace('.webp', '_pixel.webp') : p.avatar}`}
+                                                                        alt={p.username}
+                                                                        className="run-player-avatar"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="run-player-avatar run-player-avatar--placeholder">
+                                                                        <User size={13} />
+                                                                    </div>
+                                                                )}
+                                                                <button
+                                                                    className="run-player-remove run-player-remove--visible"
+                                                                    onClick={() => removeRunPlayer(run.id, p.user_id)}
+                                                                    title={t('removePlayer')}
+                                                                >
+                                                                    <X size={9} />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                        <CustomSelect
+                                                            value=""
+                                                            onChange={(userId) => { if (userId) addRunPlayer(run.id, userId); }}
+                                                            options={[
+                                                                { value: '', label: t('addPlayer') || '\u2014 Add player \u2014' },
+                                                                ...allUsers
+                                                                    .filter(u => !(run.players || []).some(p => p.user_id === u.id))
+                                                                    .map(u => ({ value: u.id, label: u.username }))
+                                                            ]}
+                                                            className="run-player-select"
+                                                        />
+                                                    </div>
+                                                    <div className="run-editor-actions">
+                                                        <button className="btn btn-sm btn-primary" onClick={saveRunDetails}>{t('saveRunName') || 'Save'}</button>
+                                                        <button className="btn btn-sm btn-outline" onClick={() => setEditingRunDraft(null)}>{t('cancelRunName') || 'Cancel'}</button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+                {manageMediaOpen && (
+                    <div className="modal-overlay" onClick={() => { setManageMediaOpen(false); setEditingMediaDraft(null); }}>
+                        <div className="modal-content modal-detail modal-admin-manage" onClick={e => e.stopPropagation()}>
+                            <div className="modal-header">
+                                <h2>{t('adminManageMedia') || 'Manage Media'}</h2>
+                                <button className="modal-close" onClick={() => { setManageMediaOpen(false); setEditingMediaDraft(null); }} aria-label="Close"><X size={20} /></button>
+                            </div>
+                            {canUploadMedia ? (
+                                <div className="media-editor-card">
+                                    <div className="run-editor-grid media-upload-grid">
+                                        <label className="run-editor-field">
+                                            <span>{t('uploadAsUser') || 'Upload as user'}</span>
+                                            <CustomSelect
+                                                value={adminUploadUserId}
+                                                onChange={(value) => setAdminUploadUserId(value)}
+                                                options={allUsers.map(user => ({ value: user.id, label: user.username }))}
+                                                className="run-player-select"
+                                            />
+                                        </label>
+                                        <label className="run-editor-field">
+                                            <span>{t('uploadAtDate') || 'Upload date'}</span>
+                                            <input
+                                                type="datetime-local"
+                                                value={adminUploadDate}
+                                                onChange={(e) => setAdminUploadDate(e.target.value)}
+                                                className="rating-comment-input"
+                                            />
+                                        </label>
+                                    </div>
+                                    <div className="media-editor-hint">{t('adminMediaUploadHint') || 'Every file you upload now will use this user and date until you change them.'}</div>
+                                    <label className="btn btn-sm btn-outline media-upload-btn" style={{ marginTop: '0.75rem' }}>
+                                        <Upload size={14} /> {t('uploadMedia')}
+                                        <input type="file" accept="image/*,video/*" multiple hidden onChange={e => {
+                                            queueMediaFiles([...(e.target.files || [])]);
+                                            e.target.value = '';
+                                        }} />
+                                    </label>
+                                </div>
+                            ) : (
+                                <p className="players-empty">{t('mediaUploadLocked')}</p>
+                            )}
+                            {mediaUploads.length > 0 && (
+                                <div className="upload-progress-list">
+                                    {mediaUploads.map((u) => (
+                                        <div key={u.id} className="upload-progress-card">
+                                            <div className="upload-progress-meta">
+                                                <span>{u.name}</span>
+                                                <div className="upload-progress-actions">
+                                                    <span>{u.error ? t('uploadFailed') : `${u.progress}%`}</span>
+                                                    {!u.error && u.progress < 100 && (
+                                                        <button
+                                                            type="button"
+                                                            className="upload-progress-cancel"
+                                                            onClick={() => cancelMediaUpload(u.id)}
+                                                            aria-label="Cancel upload"
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="upload-progress-track">
+                                                <div className="upload-progress-fill" style={{ width: `${u.error ? 100 : u.progress}%` }} />
+                                            </div>
+                                            {u.error && <div className="upload-progress-error">{u.error}</div>}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="admin-media-manage-grid">
+                                {(game.media || []).map(m => (
+                                    <div key={m.id} className="admin-media-manage-item">
+                                        <div className="admin-media-manage-preview" onClick={() => { setLightboxMedia(m); setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }}>
+                                            {m.mime_type.startsWith('image/') ? (
+                                                <img src={`/api/media/${m.filename}`} alt="" className="media-thumb" />
+                                            ) : (
+                                                <video src={`/api/media/${m.filename}`} className="media-thumb" />
+                                            )}
+                                        </div>
+                                        <div className="admin-media-manage-meta">
+                                            <div>{m.uploaded_by_username || 'Unknown'}</div>
+                                            <div>{formatUnixDateTime(m.uploaded_at)}</div>
+                                        </div>
+                                        <div className="run-editor-actions">
+                                            <button className="btn btn-sm btn-outline" onClick={() => openMediaEditor(m)}>
+                                                <Edit3 size={14} /> {t('editMediaDetails') || 'Edit media details'}
+                                            </button>
+                                            <button className="btn btn-sm btn-danger" onClick={() => deleteMedia(m.id)}>
+                                                <Trash2 size={14} /> {t('deleteMediaItem') || 'Delete media'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            {isAdmin && editingMediaDraft && (
+                                <div className="media-editor-card">
+                                    <div className="run-editor-subtitle">{t('editMediaDetails') || 'Edit media details'}</div>
+                                    <div className="run-editor-grid media-upload-grid">
+                                        <label className="run-editor-field">
+                                            <span>{t('uploadAsUser') || 'Upload as user'}</span>
+                                            <CustomSelect
+                                                value={editingMediaDraft.uploadedBy}
+                                                onChange={(value) => setEditingMediaDraft(prev => ({ ...prev, uploadedBy: value }))}
+                                                options={allUsers.map(user => ({ value: user.id, label: user.username }))}
+                                                className="run-player-select"
+                                            />
+                                        </label>
+                                        <label className="run-editor-field">
+                                            <span>{t('uploadAtDate') || 'Upload date'}</span>
+                                            <input
+                                                type="datetime-local"
+                                                value={editingMediaDraft.uploadedAt}
+                                                onChange={(e) => setEditingMediaDraft(prev => ({ ...prev, uploadedAt: e.target.value }))}
+                                                className="rating-comment-input"
+                                            />
+                                        </label>
+                                    </div>
+                                    <div className="run-editor-actions">
+                                        <button className="btn btn-sm btn-primary" onClick={saveMediaDetails}>{t('saveMediaDetails') || t('saveRunName') || 'Save'}</button>
+                                        <button className="btn btn-sm btn-outline" onClick={() => setEditingMediaDraft(null)}>{t('cancelRunName') || 'Cancel'}</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
                 {manageDownloadsOpen && (
                     <ManageDownloadsModal
                         gameId={game.id}

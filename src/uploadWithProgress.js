@@ -16,7 +16,7 @@ function resolveDefaultTimeout() {
     return 300000;
 }
 
-export function uploadWithProgress({ url, token, formData, onProgress, onAbortReady, timeoutMs }) {
+export function uploadWithProgress({ url, token, formData, onProgress, onAbortReady, timeoutMs, extraFields }) {
     if (!timeoutMs) timeoutMs = resolveDefaultTimeout();
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -51,11 +51,19 @@ export function uploadWithProgress({ url, token, formData, onProgress, onAbortRe
         xhr.onabort = () => reject(new Error('ABORTED'));
         xhr.ontimeout = () => reject(new Error('UPLOAD_TIMEOUT'));
 
-        xhr.send(formData);
+        const payload = formData || new FormData();
+        if (extraFields) {
+            Object.entries(extraFields).forEach(([key, value]) => {
+                if (value === undefined || value === null || value === '') return;
+                payload.append(key, String(value));
+            });
+        }
+
+        xhr.send(payload);
     });
 }
 
-export function uploadChunked({ url, token, file, onProgress, onAbortReady, timeoutMs }) {
+export function uploadChunked({ url, token, file, onProgress, onAbortReady, timeoutMs, extraFields }) {
     if (!timeoutMs) timeoutMs = resolveDefaultTimeout();
     return new Promise(async (resolve, reject) => {
         const chunkSize = 5 * 1024 * 1024; // 5 MB chunks
@@ -86,6 +94,12 @@ export function uploadChunked({ url, token, file, onProgress, onAbortReady, time
             formData.append('totalChunks', totalChunks.toString());
             formData.append('uploadId', uploadId);
             formData.append('file', chunk, file.name);
+            if (extraFields) {
+                Object.entries(extraFields).forEach(([key, value]) => {
+                    if (value === undefined || value === null || value === '') return;
+                    formData.append(key, String(value));
+                });
+            }
 
             try {
                 const res = await new Promise((resChunk, rejChunk) => {

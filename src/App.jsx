@@ -247,7 +247,10 @@ function App() {
                 body: JSON.stringify(body),
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) return setAuthError(toAuthMessage(data?.error));
+            if (!res.ok) {
+                if (res.status === 429) return setAuthError(t('rateLimitError'));
+                return setAuthError(toAuthMessage(data?.error));
+            }
 
             localStorage.setItem(TOKEN_KEY, data.token);
             setToken(data.token);
