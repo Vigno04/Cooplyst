@@ -63,6 +63,25 @@ function getMedianRating(gameId) {
         : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+function getRunsCount(gameId) {
+    return db.prepare('SELECT COUNT(*) as c FROM game_runs WHERE game_id = ?').get(gameId).c;
+}
+
+function getMediaCount(gameId) {
+    return db.prepare('SELECT COUNT(*) as c FROM media WHERE game_id = ?').get(gameId).c;
+}
+
+function getCompletedOn(gameId) {
+    const row = db.prepare(
+        `SELECT completed_at
+         FROM game_runs
+         WHERE game_id = ? AND completed_at IS NOT NULL
+         ORDER BY completed_at DESC, run_number DESC
+         LIMIT 1`
+    ).get(gameId);
+    return row?.completed_at ?? null;
+}
+
 function populatePlayersFromVotes(gameId) {
     // Add all yes-voters as players (skip if already added)
     const yesVoters = db.prepare(
@@ -228,6 +247,9 @@ function enrichGame(game, userId) {
         players: getPlayers(game.id),
         latest_downloads: Object.values(latestDownloads),
         median_rating: getMedianRating(game.id),
+        runs_count: getRunsCount(game.id),
+        media_count: getMediaCount(game.id),
+        completed_on: getCompletedOn(game.id),
     };
     if (visibility === 'public') {
         result.voters = getVoters(game.id);
@@ -243,6 +265,9 @@ module.exports = {
     getPlayers,
     getRunPlayers,
     getMedianRating,
+    getRunsCount,
+    getMediaCount,
+    getCompletedOn,
     populatePlayersFromVotes,
     parseJsonSafe,
     hydrateGame,

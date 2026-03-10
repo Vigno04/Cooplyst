@@ -3,6 +3,19 @@ import { Trophy, Star, ThumbsUp, Users, Play, Image as ImageIcon, ArrowUpDown, C
 import GameCard from './GameCard';
 import CustomSelect from './CustomSelect';
 
+function getCompletedGameDate(game) {
+    if (game.completed_on && /^\d{4}-\d{2}-\d{2}$/.test(game.completed_on)) {
+        return new Date(`${game.completed_on}T00:00:00`);
+    }
+    if (game.status_changed_at) {
+        return new Date(game.status_changed_at * 1000);
+    }
+    if (game.proposed_at) {
+        return new Date(game.proposed_at * 1000);
+    }
+    return new Date(0);
+}
+
 export default function CompletedView({ completedGames, openGame, t }) {
     const [sortBy, setSortBy] = useState('dateDesc');
 
@@ -74,14 +87,7 @@ export default function CompletedView({ completedGames, openGame, t }) {
             }
 
             // periods
-            let periodDate;
-            if (g.status_changed_at) {
-                periodDate = new Date(g.status_changed_at * 1000);
-            } else if (g.proposed_at) {
-                periodDate = new Date(g.proposed_at * 1000);
-            } else {
-                periodDate = new Date(); // fallback
-            }
+            const periodDate = getCompletedGameDate(g);
 
             const pKey = `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, '0')}`;
             if (!periodCounts[pKey]) periodCounts[pKey] = 0;
@@ -122,8 +128,8 @@ export default function CompletedView({ completedGames, openGame, t }) {
     const sortedList = useMemo(() => {
         const arr = [...completedGames];
         return arr.sort((a, b) => {
-            const timeA = a.status_changed_at || a.proposed_at || 0;
-            const timeB = b.status_changed_at || b.proposed_at || 0;
+            const timeA = getCompletedGameDate(a).getTime();
+            const timeB = getCompletedGameDate(b).getTime();
             const voteA = a.median_rating !== null ? Number(a.median_rating) : 0;
             const voteB = b.median_rating !== null ? Number(b.median_rating) : 0;
 
