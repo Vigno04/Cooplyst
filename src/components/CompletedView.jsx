@@ -56,7 +56,7 @@ export default function CompletedView({ completedGames, openGame, t }) {
         let countVotes = 0;
 
         let mostVotedGame = null;
-        let maxVotes = -1;
+        let maxRating = -1;
 
         let mostRunsGame = null;
         let maxRuns = -1;
@@ -81,11 +81,13 @@ export default function CompletedView({ completedGames, openGame, t }) {
                 countVotes++;
             }
 
-            // most voted
-            const totalVotes = (g.votes_yes || 0) + (g.votes_no || 0);
-            if (totalVotes > maxVotes) {
-                maxVotes = totalVotes;
-                mostVotedGame = g;
+            // highest rated completed game
+            if (g.median_rating !== null && g.median_rating !== undefined) {
+                const rating = Number(g.median_rating);
+                if (rating > maxRating) {
+                    maxRating = rating;
+                    mostVotedGame = g;
+                }
             }
 
             // most runs
