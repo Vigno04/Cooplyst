@@ -8,27 +8,33 @@ import StatusBadge from './StatusBadge';
 import AdminMetadataEditor from './AdminMetadataEditor';
 import ManageDownloadsModal from './ManageDownloadsModal';
 
-function toDateTimeLocalValue(unixSeconds) {
-    if (!unixSeconds) return '';
-    const date = new Date(unixSeconds * 1000);
+function toDateInputValue(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return value.slice(0, 10);
+    const date = new Date(value * 1000);
     const local = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
-    return local.toISOString().slice(0, 16);
+    return local.toISOString().slice(0, 10);
 }
 
-function getCurrentDateTimeLocalValue() {
-    return toDateTimeLocalValue(Math.floor(Date.now() / 1000));
+function getCurrentDateInputValue() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 }
 
-function parseDateTimeLocalValue(value) {
+function parseDateInputValue(value) {
     if (!value) return null;
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return Math.floor(parsed.getTime() / 1000);
+    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
-function formatUnixDateTime(unixSeconds) {
-    if (!unixSeconds) return null;
-    return new Date(unixSeconds * 1000).toLocaleString();
+function formatRunDate(value) {
+    if (!value) return null;
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return new Date(`${value}T00:00:00`).toLocaleDateString();
+    }
+    return new Date(value * 1000).toLocaleDateString();
 }
 
 export default function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGameUpdated, t }) {
@@ -58,7 +64,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
     const [manageMediaOpen, setManageMediaOpen] = useState(false);
     const [editingMediaDraft, setEditingMediaDraft] = useState(null);
     const [adminUploadUserId, setAdminUploadUserId] = useState(currentUser?.id || '');
-    const [adminUploadDate, setAdminUploadDate] = useState(getCurrentDateTimeLocalValue());
+    const [adminUploadDate, setAdminUploadDate] = useState(getCurrentDateInputValue());
 
     const isAdmin = currentUser?.role === 'admin';
     const canManageDownloads = isAdmin || window?.COOPLYST_CONFIG?.allow_all_users_add_downloads === true;
@@ -104,7 +110,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
             setAdminUploadUserId(currentUser.id);
         }
         if (!adminUploadDate) {
-            setAdminUploadDate(getCurrentDateTimeLocalValue());
+            setAdminUploadDate(getCurrentDateInputValue());
         }
     }, [isAdmin, currentUser?.id, adminUploadUserId, adminUploadDate]);
 
@@ -164,16 +170,16 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         setEditingRunDraft({
             id: run.id,
             name: run.name || `${t('runLabel')} #${run.run_number}`,
-            startedAt: toDateTimeLocalValue(run.started_at),
-            completedAt: toDateTimeLocalValue(run.completed_at),
+            startedAt: toDateInputValue(run.started_at),
+            completedAt: toDateInputValue(run.completed_at),
         });
     };
 
     const saveRunDetails = async () => {
         if (!editingRunDraft) return;
         const name = editingRunDraft.name.trim();
-        const startedAt = parseDateTimeLocalValue(editingRunDraft.startedAt);
-        const completedAt = editingRunDraft.completedAt ? parseDateTimeLocalValue(editingRunDraft.completedAt) : null;
+        const startedAt = parseDateInputValue(editingRunDraft.startedAt);
+        const completedAt = editingRunDraft.completedAt ? parseDateInputValue(editingRunDraft.completedAt) : null;
         if (!name || !startedAt) return;
         if (editingRunDraft.completedAt && !completedAt) return;
         try {
@@ -215,7 +221,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
 
     const getAdminMediaUploadFields = () => {
         if (!isAdmin) return {};
-        const uploadedAt = parseDateTimeLocalValue(adminUploadDate);
+        const uploadedAt = parseDateInputValue(adminUploadDate);
         return {
             uploaded_by: adminUploadUserId || currentUser?.id,
             uploaded_at: uploadedAt || Math.floor(Date.now() / 1000),
@@ -275,13 +281,13 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         setEditingMediaDraft({
             id: media.id,
             uploadedBy: media.uploaded_by,
-            uploadedAt: toDateTimeLocalValue(media.uploaded_at),
+            uploadedAt: toDateInputValue(media.uploaded_at),
         });
     };
 
     const saveMediaDetails = async () => {
         if (!editingMediaDraft) return;
-        const uploadedAt = parseDateTimeLocalValue(editingMediaDraft.uploadedAt);
+        const uploadedAt = parseDateInputValue(editingMediaDraft.uploadedAt);
         if (!editingMediaDraft.uploadedBy || !uploadedAt) return;
 
         try {
@@ -689,8 +695,8 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                 <div className="run-header-main">
                                                     <span className="run-label">{run.name || `${t('runLabel')} #${run.run_number}`}</span>
                                                     <div className="run-date-list">
-                                                        <span>{t('runStartedAt') || 'Started'}: {formatUnixDateTime(run.started_at)}</span>
-                                                        <span>{t('runCompletedAt') || 'Completed'}: {formatUnixDateTime(run.completed_at) || (t('notCompletedYet') || 'Not completed')}</span>
+                                                        <span>{t('runStartedAt') || 'Started'}: {formatRunDate(run.started_at)}</span>
+                                                        <span>{t('runCompletedAt') || 'Completed'}: {formatRunDate(run.completed_at) || (t('notCompletedYet') || 'Not completed')}</span>
                                                     </div>
                                                 </div>
                                                 {run.completed_at ? (
@@ -942,7 +948,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                             <video src={`/api/media/${m.filename}`} className="media-thumb" />
                                                         )}
                                                         <div className="media-item-footer">
-                                                            <span className="media-item-date">{formatUnixDateTime(m.uploaded_at)}</span>
+                                                            <span className="media-item-date">{formatUnixDate(m.uploaded_at)}</span>
                                                             {m.uploaded_by === currentUser?.id && (
                                                                 <button className="media-delete" onClick={(e) => { e.stopPropagation(); deleteMedia(m.id); }}>
                                                                     <Trash2 size={12} />
@@ -1070,8 +1076,8 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                 <div className="run-header-main">
                                                     <span className="run-label">{run.name || `${t('runLabel')} #${run.run_number}`}</span>
                                                     <div className="run-date-list">
-                                                        <span>{t('runStartedAt') || 'Started'}: {formatUnixDateTime(run.started_at)}</span>
-                                                        <span>{t('runCompletedAt') || 'Completed'}: {formatUnixDateTime(run.completed_at) || (t('notCompletedYet') || 'Not completed')}</span>
+                                                        <span>{t('runStartedAt') || 'Started'}: {formatRunDate(run.started_at)}</span>
+                                                        <span>{t('runCompletedAt') || 'Completed'}: {formatRunDate(run.completed_at) || (t('notCompletedYet') || 'Not completed')}</span>
                                                     </div>
                                                 </div>
                                                 <div className="run-header-actions">
@@ -1125,7 +1131,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                         <label className="run-editor-field">
                                                             <span>{t('runStartedAt') || 'Started at'}</span>
                                                             <input
-                                                                type="datetime-local"
+                                                                type="date"
                                                                 value={editingRunDraft.startedAt}
                                                                 onChange={(e) => setEditingRunDraft(prev => ({ ...prev, startedAt: e.target.value }))}
                                                                 className="rating-comment-input"
@@ -1134,7 +1140,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                         <label className="run-editor-field">
                                                             <span>{t('runCompletedAt') || 'Completed at'}</span>
                                                             <input
-                                                                type="datetime-local"
+                                                                type="date"
                                                                 value={editingRunDraft.completedAt}
                                                                 onChange={(e) => setEditingRunDraft(prev => ({ ...prev, completedAt: e.target.value }))}
                                                                 className="rating-comment-input"
@@ -1212,7 +1218,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                         <label className="run-editor-field">
                                             <span>{t('uploadAtDate') || 'Upload date'}</span>
                                             <input
-                                                type="datetime-local"
+                                                type="date"
                                                 value={adminUploadDate}
                                                 onChange={(e) => setAdminUploadDate(e.target.value)}
                                                 className="rating-comment-input"
@@ -1271,7 +1277,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                         </div>
                                         <div className="admin-media-manage-meta">
                                             <div>{m.uploaded_by_username || 'Unknown'}</div>
-                                            <div>{formatUnixDateTime(m.uploaded_at)}</div>
+                                            <div>{formatUnixDate(m.uploaded_at)}</div>
                                         </div>
                                         <div className="run-editor-actions">
                                             <button className="btn btn-sm btn-outline" onClick={() => openMediaEditor(m)}>
@@ -1300,7 +1306,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                         <label className="run-editor-field">
                                             <span>{t('uploadAtDate') || 'Upload date'}</span>
                                             <input
-                                                type="datetime-local"
+                                                type="date"
                                                 value={editingMediaDraft.uploadedAt}
                                                 onChange={(e) => setEditingMediaDraft(prev => ({ ...prev, uploadedAt: e.target.value }))}
                                                 className="rating-comment-input"

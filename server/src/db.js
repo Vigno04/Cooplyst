@@ -90,8 +90,8 @@ db.exec(`
     game_id      TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
     run_number   INTEGER NOT NULL DEFAULT 1,
     name         TEXT,
-    started_at   INTEGER NOT NULL DEFAULT (unixepoch()),
-    completed_at INTEGER,
+    started_at   TEXT NOT NULL DEFAULT (date('now', 'localtime')),
+    completed_at TEXT,
     UNIQUE(game_id, run_number)
   );
 
@@ -157,6 +157,50 @@ if (!gameCols.includes('provider_payload')) db.exec('ALTER TABLE games ADD COLUM
 // Migration: add optional run name column
 const runCols = db.prepare('PRAGMA table_info(game_runs)').all().map(c => c.name);
 if (!runCols.includes('name')) db.exec('ALTER TABLE game_runs ADD COLUMN name TEXT');
+
+const runColumnsInfo = db.prepare('PRAGMA table_info(game_runs)').all();
+const startedAtColumn = runColumnsInfo.find(c => c.name === 'started_at');
+const completedAtColumn = runColumnsInfo.find(c => c.name === 'completed_at');
+const runDatesAreText = startedAtColumn?.type?.toUpperCase() === 'TEXT' && completedAtColumn?.type?.toUpperCase() === 'TEXT';
+
+if (!runDatesAreText) {
+  db.pragma('foreign_keys = OFF');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS game_runs_migrated (
+      id           TEXT PRIMARY KEY,
+      game_id      TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      run_number   INTEGER NOT NULL DEFAULT 1,
+      name         TEXT,
+      started_at   TEXT NOT NULL DEFAULT (date('now', 'localtime')),
+      completed_at TEXT,
+      UNIQUE(game_id, run_number)
+    );
+
+    INSERT INTO game_runs_migrated (id, game_id, run_number, name, started_at, completed_at)
+    SELECT
+      id,
+      game_id,
+      run_number,
+      name,
+      CASE
+        WHEN typeof(started_at) = 'integer' THEN date(started_at, 'unixepoch', 'localtime')
+        WHEN typeof(started_at) = 'text' AND started_at GLOB '????-??-??' THEN started_at
+        WHEN started_at IS NULL OR TRIM(started_at) = '' THEN date('now', 'localtime')
+        ELSE substr(started_at, 1, 10)
+      END,
+      CASE
+        WHEN completed_at IS NULL THEN NULL
+        WHEN typeof(completed_at) = 'integer' THEN date(completed_at, 'unixepoch', 'localtime')
+        WHEN typeof(completed_at) = 'text' AND completed_at GLOB '????-??-??' THEN completed_at
+        ELSE substr(completed_at, 1, 10)
+      END
+    FROM game_runs;
+
+    DROP TABLE game_runs;
+    ALTER TABLE game_runs_migrated RENAME TO game_runs;
+  `);
+  db.pragma('foreign_keys = ON');
+}
 
 // Migration: add language preference and email notifications to users
 if (!userCols.includes('language')) db.exec('ALTER TABLE users ADD COLUMN language TEXT');

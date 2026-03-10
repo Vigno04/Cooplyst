@@ -2,19 +2,42 @@ const { v4: uuidv4 } = require('uuid');
 const { requireAdmin } = require('../../middleware/auth');
 const db = require('../../db');
 
-function normalizeUnixTimestamp(value, fieldName, { allowNull = false } = {}) {
+function formatDateOnly(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getTodayDateString() {
+    return formatDateOnly(new Date());
+}
+
+function normalizeRunDate(value, fieldName, { allowNull = false } = {}) {
     if (value === undefined) return undefined;
     if (value === null || value === '') {
         if (allowNull) return null;
         throw new Error(`${fieldName} is required`);
     }
 
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric) || numeric <= 0) {
-        throw new Error(`${fieldName} must be a valid unix timestamp`);
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+            return trimmed;
+        }
+
+        const parsed = new Date(trimmed);
+        if (!Number.isNaN(parsed.getTime())) {
+            return formatDateOnly(parsed);
+        }
     }
 
-    return Math.floor(numeric);
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) {
+        return formatDateOnly(new Date(numeric * 1000));
+    }
+
+    throw new Error(`${fieldName} must be a valid date`);
 }
 
 function syncGameStatusForRuns(gameId) {
@@ -53,7 +76,7 @@ module.exports = function registerRunRoutes(router) {
         const runName = `Run #${runNumber}`;
 
         const id = uuidv4();
-        db.prepare('INSERT INTO game_runs (id, game_id, run_number, name) VALUES (?, ?, ?, ?)').run(id, game.id, runNumber, runName);
+        db.prepare('INSERT INTO game_runs (id, game_id, run_number, name, started_at) VALUES (?, ?, ?, ?, ?)').run(id, game.id, runNumber, runName, getTodayDateString());
 
         // Auto-populate run_players from all yes-voters for this game
         const yesVoters = db.prepare('SELECT user_id FROM votes WHERE game_id = ? AND vote = 1').all(game.id);
@@ -76,8 +99,8 @@ module.exports = function registerRunRoutes(router) {
         let startedAt;
         let completedAt;
         try {
-            startedAt = normalizeUnixTimestamp(req.body.started_at, 'started_at');
-            completedAt = normalizeUnixTimestamp(req.body.completed_at, 'completed_at', { allowNull: true });
+            startedAt = normalizeRunDate(req.body.started_at, 'started_at');
+            completedAt = normalizeRunDate(req.body.completed_at, 'completed_at', { allowNull: true });
         } catch (err) {
             return res.status(400).json({ error: err.message });
         }
@@ -114,7 +137,7 @@ module.exports = function registerRunRoutes(router) {
         const run = db.prepare('SELECT * FROM game_runs WHERE id = ? AND game_id = ?').get(req.params.runId, req.params.id);
         if (!run) return res.status(404).json({ error: 'Run not found' });
 
-        db.prepare('UPDATE game_runs SET completed_at = unixepoch() WHERE id = ?').run(run.id);
+        db.prepare('UPDATE game_runs SET completed_at = ? WHERE id = ?').run(getTodayDateString(), run.id);
         syncGameStatusForRuns(req.params.id);
 
         const updated = db.prepare('SELECT * FROM game_runs WHERE id = ?').get(run.id);
