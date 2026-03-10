@@ -24,6 +24,21 @@ function normalizeUnixTimestamp(value, fieldName, { allowNull = false } = {}) {
         throw new Error(`${fieldName} is required`);
     }
 
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+            const parsedDate = new Date(`${trimmed}T00:00:00`);
+            if (!Number.isNaN(parsedDate.getTime())) {
+                return Math.floor(parsedDate.getTime() / 1000);
+            }
+        }
+
+        const parsedStringDate = new Date(trimmed);
+        if (!Number.isNaN(parsedStringDate.getTime())) {
+            return Math.floor(parsedStringDate.getTime() / 1000);
+        }
+    }
+
     const numeric = Number(value);
     if (!Number.isFinite(numeric) || numeric <= 0) {
         throw new Error(`${fieldName} must be a valid unix timestamp`);

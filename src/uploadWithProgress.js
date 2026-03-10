@@ -7,6 +7,18 @@ function parseJsonSafe(raw) {
     }
 }
 
+function getXhrResponseData(xhr) {
+    if (xhr.response !== null && xhr.response !== undefined) {
+        return xhr.response;
+    }
+
+    try {
+        return parseJsonSafe(xhr.responseText);
+    } catch {
+        return {};
+    }
+}
+
 function resolveDefaultTimeout() {
     try {
         const v = window?.COOPLYST_CONFIG?.upload_timeout_ms;
@@ -36,7 +48,7 @@ export function uploadWithProgress({ url, token, formData, onProgress, onAbortRe
         };
 
         xhr.onload = () => {
-            const data = xhr.response ?? parseJsonSafe(xhr.responseText);
+            const data = getXhrResponseData(xhr);
             if (xhr.status === 401) {
                 window.dispatchEvent(new Event('cooplyst:unauthorized'));
             }
@@ -120,7 +132,7 @@ export function uploadChunked({ url, token, file, onProgress, onAbortReady, time
                     };
 
                     xhr.onload = () => {
-                        const data = xhr.response ?? parseJsonSafe(xhr.responseText);
+                        const data = getXhrResponseData(xhr);
                         if (xhr.status === 401) {
                             window.dispatchEvent(new Event('cooplyst:unauthorized'));
                         }
