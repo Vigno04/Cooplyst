@@ -948,7 +948,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                             <video src={`/api/media/${m.filename}`} className="media-thumb" />
                                                         )}
                                                         <div className="media-item-footer">
-                                                            <span className="media-item-date">{formatUnixDate(m.uploaded_at)}</span>
+                                                            <span className="media-item-date">{formatRunDate(m.uploaded_at)}</span>
                                                             {m.uploaded_by === currentUser?.id && (
                                                                 <button className="media-delete" onClick={(e) => { e.stopPropagation(); deleteMedia(m.id); }}>
                                                                     <Trash2 size={12} />
@@ -1277,7 +1277,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                         </div>
                                         <div className="admin-media-manage-meta">
                                             <div>{m.uploaded_by_username || 'Unknown'}</div>
-                                            <div>{formatUnixDate(m.uploaded_at)}</div>
+                                            <div>{formatRunDate(m.uploaded_at)}</div>
                                         </div>
                                         <div className="run-editor-actions">
                                             <button className="btn btn-sm btn-outline" onClick={() => openMediaEditor(m)}>
