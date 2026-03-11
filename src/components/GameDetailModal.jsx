@@ -37,6 +37,22 @@ function formatRunDate(value) {
     return new Date(value * 1000).toLocaleDateString();
 }
 
+function toComparableTimestamp(value, { endOfDay = false } = {}) {
+    if (value === null || value === undefined || value === '') return null;
+
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        const normalized = endOfDay ? `${value}T23:59:59` : `${value}T00:00:00`;
+        const parsed = new Date(normalized).getTime();
+        return Number.isNaN(parsed) ? null : Math.floor(parsed / 1000);
+    }
+
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+
+    const parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? null : Math.floor(parsed / 1000);
+}
+
 function createRatingDraft(score = 0, comment = '') {
     return {
         score,
@@ -55,6 +71,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
     const dragCounter = useRef(0);
     const [mediaUploads, setMediaUploads] = useState([]);
     const mediaUploadAbortMapRef = useRef(new Map());
+    const [mediaGroupMode, setMediaGroupMode] = useState('uploader');
     const [lightboxMedia, setLightboxMedia] = useState(null);
     const [lightboxZoom, setLightboxZoom] = useState(1);
     const [lightboxPan, setLightboxPan] = useState({ x: 0, y: 0 });
@@ -481,6 +498,112 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         return `cooplyst-media-${Date.now()}.${ext}`;
     })();
 
+    const closeLightbox = useCallback(() => {
+        setLightboxMedia(null);
+        setIsPanning(false);
+        setLightboxZoom(1);
+        setLightboxPan({ x: 0, y: 0 });
+    }, []);
+
+    const openLightbox = useCallback((media) => {
+        setLightboxMedia(media);
+        setIsPanning(false);
+        setLightboxZoom(1);
+        setLightboxPan({ x: 0, y: 0 });
+    }, []);
+
+    const getRunLabel = useCallback((run) => {
+        if (!run) return t('mediaUngroupedRun') || 'No run';
+        return run.name || `${t('runLabel')} #${run.run_number}`;
+    }, [t]);
+
+    const getMediaRun = useCallback((media) => {
+        const uploadedAt = toComparableTimestamp(media?.uploaded_at);
+        if (uploadedAt === null) return null;
+
+        const matchingRuns = (game.runs || []).filter((run) => {
+            const startedAt = toComparableTimestamp(run.started_at);
+            if (startedAt === null) return false;
+
+            const completedAt = run.completed_at == null ? null : toComparableTimestamp(run.completed_at, { endOfDay: true });
+            const startsBeforeUpload = uploadedAt >= startedAt;
+            const endsAfterUpload = completedAt == null || uploadedAt <= completedAt;
+
+            return startsBeforeUpload && endsAfterUpload;
+        });
+
+        if (matchingRuns.length === 0) return null;
+
+        matchingRuns.sort((left, right) => {
+            const leftStartedAt = toComparableTimestamp(left.started_at) || 0;
+            const rightStartedAt = toComparableTimestamp(right.started_at) || 0;
+            if (leftStartedAt !== rightStartedAt) return rightStartedAt - leftStartedAt;
+            return (right.run_number || 0) - (left.run_number || 0);
+        });
+
+        return matchingRuns[0];
+    }, [game.runs]);
+
+    const mediaGroups = (() => {
+        const media = game.media || [];
+        if (media.length === 0) return [];
+
+        const grouped = new Map();
+
+        for (const item of media) {
+            if (mediaGroupMode === 'run') {
+                const run = getMediaRun(item);
+                const key = run?.id || '__no-run__';
+                if (!grouped.has(key)) {
+                    grouped.set(key, {
+                        key,
+                        label: getRunLabel(run),
+                        avatar: null,
+                        isRunGroup: true,
+                        isFallback: !run,
+                        order: run?.run_number ?? Number.MAX_SAFE_INTEGER,
+                        items: [],
+                    });
+                }
+                grouped.get(key).items.push(item);
+                continue;
+            }
+
+            const key = item.uploaded_by || item.uploaded_by_username || 'unknown';
+            if (!grouped.has(key)) {
+                grouped.set(key, {
+                    key,
+                    label: item.uploaded_by_username || 'Unknown',
+                    avatar: item.uploaded_by_avatar,
+                    isRunGroup: false,
+                    isFallback: false,
+                    order: 0,
+                    items: [],
+                });
+            }
+            grouped.get(key).items.push(item);
+        }
+
+        const groups = [...grouped.values()];
+        if (mediaGroupMode === 'run') {
+            groups.sort((left, right) => {
+                if (left.order !== right.order) return left.order - right.order;
+                return left.label.localeCompare(right.label);
+            });
+        }
+        return groups;
+    })();
+
+    const lightboxRun = lightboxMedia ? getMediaRun(lightboxMedia) : null;
+    const hasLightboxMeta = Boolean(
+        lightboxMedia && (
+            lightboxMedia.uploaded_by_username ||
+            lightboxMedia.uploaded_by_avatar ||
+            lightboxMedia.uploaded_at ||
+            lightboxRun
+        )
+    );
+
     const handleLightboxDownload = (e) => {
         e.stopPropagation();
         if (!lightboxSource) return;
@@ -652,7 +775,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                     <h3><ImageIcon size={16} /> {t('screenshotsSection')}</h3>
                                     <div className="detail-image-types">
                                         {(game.screenshots || []).slice(0, 12).map((url, index) => (
-                                            <button key={`${url}-${index}`} className="detail-image-type" onClick={() => setLightboxMedia({ mime_type: 'image/custom', filename: null, direct_url: url })}>
+                                            <button key={`${url}-${index}`} className="detail-image-type" onClick={() => openLightbox({ mime_type: 'image/custom', filename: null, direct_url: url })}>
                                                 <img src={url} alt="" />
                                             </button>
                                         ))}
@@ -917,7 +1040,27 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                         <span>{t('dropMediaHere')}</span>
                                     </div>
                                 )}
-                                <h3><ImageIcon size={16} /> {t('mediaSection')}</h3>
+                                <div className="media-section-heading">
+                                    <h3><ImageIcon size={16} /> {t('mediaSection')}</h3>
+                                    {mediaGroups.length > 0 && (
+                                        <div className="media-group-toggle" role="tablist" aria-label={t('mediaGroupBy') || 'Group media by'}>
+                                            <button
+                                                type="button"
+                                                className={`media-group-toggle-btn ${mediaGroupMode === 'uploader' ? 'active' : ''}`}
+                                                onClick={() => setMediaGroupMode('uploader')}
+                                            >
+                                                {t('mediaGroupByUploader') || 'By person'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`media-group-toggle-btn ${mediaGroupMode === 'run' ? 'active' : ''}`}
+                                                onClick={() => setMediaGroupMode('run')}
+                                            >
+                                                {t('mediaGroupByRun') || 'By run'}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                                 {mediaUploads.length > 0 && (
                                     <div className="upload-progress-list">
                                         {mediaUploads.map((u) => (
@@ -947,31 +1090,25 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                     </div>
                                 )}
                                 {(() => {
-                                    const media = game.media || [];
-                                    // Group by uploader
-                                    const grouped = {};
-                                    for (const m of media) {
-                                        const name = m.uploaded_by_username || 'Unknown';
-                                        if (!grouped[name]) grouped[name] = { avatar: m.uploaded_by_avatar, items: [] };
-                                        grouped[name].items.push(m);
-                                    }
-                                    const groups = Object.entries(grouped);
-                                    if (groups.length === 0) {
+                                    if (mediaGroups.length === 0) {
                                         return <p className="players-empty">{t('noMedia')}</p>;
                                     }
-                                    return groups.map(([username, { avatar, items }]) => (
-                                        <div key={username} className="media-group">
+                                    return mediaGroups.map((group) => (
+                                        <div key={group.key} className="media-group">
                                             <div className="media-group-header">
-                                                {avatar ? (
-                                                    <img src={`/api/avatars/${avatar}`} alt="" className="media-group-avatar" />
+                                                {group.avatar ? (
+                                                    <img src={`/api/avatars/${group.avatar}`} alt="" className="media-group-avatar" />
+                                                ) : group.isRunGroup ? (
+                                                    group.isFallback ? <AlertCircle size={14} className="player-avatar-placeholder" /> : <Play size={14} className="player-avatar-placeholder" />
                                                 ) : (
                                                     <Users size={14} className="player-avatar-placeholder" />
                                                 )}
-                                                {username}
+                                                <span className="media-group-title">{group.label}</span>
+                                                <span className="media-group-count">{group.items.length}</span>
                                             </div>
                                             <div className="media-gallery">
-                                                {items.map(m => (
-                                                    <div key={m.id} className="media-item" onClick={() => { setLightboxMedia(m); setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }}>
+                                                {group.items.map(m => (
+                                                    <div key={m.id} className="media-item" onClick={() => openLightbox(m)}>
                                                         {m.mime_type.startsWith('image/') ? (
                                                             <img src={`/api/media/${m.filename}`} alt="" className="media-thumb" />
                                                         ) : (
@@ -1012,8 +1149,8 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                 {lightboxMedia && (
                     <div
                         className="lightbox-overlay"
-                        onClick={() => setLightboxMedia(null)}
-                        onKeyDown={e => e.key === 'Escape' && setLightboxMedia(null)}
+                        onClick={closeLightbox}
+                        onKeyDown={e => e.key === 'Escape' && closeLightbox()}
                         tabIndex={-1}
                         ref={el => el?.focus()}
                         onWheel={e => {
@@ -1027,10 +1164,28 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                             });
                         }}
                     >
+                        {hasLightboxMeta && (
+                            <div className="lightbox-meta" onClick={e => e.stopPropagation()}>
+                                {lightboxMedia.uploaded_by_avatar ? (
+                                    <img src={`/api/avatars/${lightboxMedia.uploaded_by_avatar}`} alt="" className="lightbox-meta-avatar" />
+                                ) : (
+                                    <div className="lightbox-meta-avatar lightbox-meta-avatar--placeholder">
+                                        <User size={16} />
+                                    </div>
+                                )}
+                                <div className="lightbox-meta-copy">
+                                    <div className="lightbox-meta-name">{lightboxMedia.uploaded_by_username || 'Unknown'}</div>
+                                    <div className="lightbox-meta-details">
+                                        {lightboxMedia.uploaded_at && <span>{formatRunDate(lightboxMedia.uploaded_at)}</span>}
+                                        {lightboxRun && <span className="lightbox-meta-run">{getRunLabel(lightboxRun)}</span>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         <button className="lightbox-download" onClick={handleLightboxDownload} title={t('downloadMedia')} aria-label={t('downloadMedia')}>
                             <Download size={18} />
                         </button>
-                        <button className="lightbox-close" onClick={() => setLightboxMedia(null)}><X size={24} /></button>
+                        <button className="lightbox-close" onClick={closeLightbox}><X size={24} /></button>
                         {lightboxZoom > 1 && (
                             <div className="lightbox-zoom-badge">{Math.round(lightboxZoom * 100)}%</div>
                         )}
@@ -1298,7 +1453,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                             <div className="admin-media-manage-grid">
                                 {(game.media || []).map(m => (
                                     <div key={m.id} className="admin-media-manage-item">
-                                        <div className="admin-media-manage-preview" onClick={() => { setLightboxMedia(m); setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }}>
+                                        <div className="admin-media-manage-preview" onClick={() => openLightbox(m)}>
                                             {m.mime_type.startsWith('image/') ? (
                                                 <img src={`/api/media/${m.filename}`} alt="" className="media-thumb" />
                                             ) : (

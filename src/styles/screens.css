@@ -2419,6 +2419,45 @@
 }
 
 /* ── Media Gallery ───────────────────────────────────────────── */
+.media-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.6rem;
+}
+
+.media-section-heading h3 {
+    margin-bottom: 0;
+}
+
+.media-group-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.2rem;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(74, 144, 226, 0.18);
+}
+
+.media-group-toggle-btn {
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.65);
+    font-family: var(--font-retro);
+    font-size: 0.55rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.38rem 0.55rem;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.media-group-toggle-btn.active {
+    background: rgba(74, 144, 226, 0.2);
+    color: var(--text-primary);
+}
+
 .media-gallery {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -2442,6 +2481,19 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
+}
+
+.media-group-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.media-group-count {
+    margin-left: auto;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 0.55rem;
 }
 
 .media-group-avatar {
@@ -2643,6 +2695,70 @@
     outline: none;
 }
 
+.lightbox-meta {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    max-width: min(420px, calc(100vw - 8rem));
+    padding: 0.65rem 0.8rem;
+    background: rgba(0, 0, 0, 0.56);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(10px);
+    z-index: 2001;
+}
+
+.lightbox-meta-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    flex-shrink: 0;
+}
+
+.lightbox-meta-avatar--placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.lightbox-meta-copy {
+    min-width: 0;
+}
+
+.lightbox-meta-name {
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lightbox-meta-details {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.18rem;
+    font-size: 0.66rem;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.lightbox-meta-run {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.16rem 0.4rem;
+    border: 1px solid rgba(74, 144, 226, 0.35);
+    background: rgba(74, 144, 226, 0.14);
+    color: rgba(255, 255, 255, 0.9);
+}
+
 .lightbox-close {
     position: absolute;
     top: 1rem;
@@ -2715,6 +2831,33 @@
 
 .media-item {
     cursor: pointer;
+}
+
+@media (max-width: 700px) {
+    .media-section-heading {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .media-group-toggle {
+        width: 100%;
+    }
+
+    .media-group-toggle-btn {
+        flex: 1;
+    }
+
+    .lightbox-meta {
+        top: 0.75rem;
+        left: 0.75rem;
+        max-width: calc(100vw - 6.5rem);
+        padding: 0.55rem 0.65rem;
+    }
+
+    .lightbox-meta-avatar {
+        width: 36px;
+        height: 36px;
+    }
 }
 
 /* ── Admin controls in detail modal ──────────────────────────── */
