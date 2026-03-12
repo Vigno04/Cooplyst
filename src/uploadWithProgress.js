@@ -7,6 +7,18 @@ function parseJsonSafe(raw) {
     }
 }
 
+function getXhrResponseData(xhr) {
+    if (xhr.response !== null && xhr.response !== undefined) {
+        return xhr.response;
+    }
+
+    try {
+        return parseJsonSafe(xhr.responseText);
+    } catch {
+        return {};
+    }
+}
+
 function resolveDefaultTimeout() {
     try {
         const v = window?.COOPLYST_CONFIG?.upload_timeout_ms;
@@ -16,7 +28,7 @@ function resolveDefaultTimeout() {
     return 300000;
 }
 
-export function uploadWithProgress({ url, token, formData, onProgress, onAbortReady, timeoutMs }) {
+export function uploadWithProgress({ url, token, formData, onProgress, onAbortReady, timeoutMs, extraFields }) {
     if (!timeoutMs) timeoutMs = resolveDefaultTimeout();
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -36,7 +48,7 @@ export function uploadWithProgress({ url, token, formData, onProgress, onAbortRe
         };
 
         xhr.onload = () => {
-            const data = xhr.response ?? parseJsonSafe(xhr.responseText);
+            const data = getXhrResponseData(xhr);
             if (xhr.status === 401) {
                 window.dispatchEvent(new Event('cooplyst:unauthorized'));
             }
@@ -51,11 +63,19 @@ export function uploadWithProgress({ url, token, formData, onProgress, onAbortRe
         xhr.onabort = () => reject(new Error('ABORTED'));
         xhr.ontimeout = () => reject(new Error('UPLOAD_TIMEOUT'));
 
-        xhr.send(formData);
+        const payload = formData || new FormData();
+        if (extraFields) {
+            Object.entries(extraFields).forEach(([key, value]) => {
+                if (value === undefined || value === null || value === '') return;
+                payload.append(key, String(value));
+            });
+        }
+
+        xhr.send(payload);
     });
 }
 
-export function uploadChunked({ url, token, file, onProgress, onAbortReady, timeoutMs }) {
+export function uploadChunked({ url, token, file, onProgress, onAbortReady, timeoutMs, extraFields }) {
     if (!timeoutMs) timeoutMs = resolveDefaultTimeout();
     return new Promise(async (resolve, reject) => {
         const chunkSize = 5 * 1024 * 1024; // 5 MB chunks
@@ -86,6 +106,12 @@ export function uploadChunked({ url, token, file, onProgress, onAbortReady, time
             formData.append('totalChunks', totalChunks.toString());
             formData.append('uploadId', uploadId);
             formData.append('file', chunk, file.name);
+            if (extraFields) {
+                Object.entries(extraFields).forEach(([key, value]) => {
+                    if (value === undefined || value === null || value === '') return;
+                    formData.append(key, String(value));
+                });
+            }
 
             try {
                 const res = await new Promise((resChunk, rejChunk) => {
@@ -106,7 +132,7 @@ export function uploadChunked({ url, token, file, onProgress, onAbortReady, time
                     };
 
                     xhr.onload = () => {
-                        const data = xhr.response ?? parseJsonSafe(xhr.responseText);
+                        const data = getXhrResponseData(xhr);
                         if (xhr.status === 401) {
                             window.dispatchEvent(new Event('cooplyst:unauthorized'));
                         }

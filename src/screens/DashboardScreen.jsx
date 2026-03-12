@@ -6,13 +6,20 @@ import GameDetailModal from '../components/GameDetailModal';
 import ProposeGameModal from '../components/ProposeGameModal';
 import CompletedView from '../components/CompletedView';
 
+const DASHBOARD_VIEW_KEY = 'cooplyst_dashboard_view';
+
+function getStoredDashboardView() {
+    const stored = localStorage.getItem(DASHBOARD_VIEW_KEY);
+    return stored === 'completed' ? 'completed' : 'board';
+}
+
 export default function DashboardScreen({ token, currentUser }) {
     const { t } = useTranslation();
     const [games, setGames] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showPropose, setShowPropose] = useState(false);
     const [selectedGame, setSelectedGame] = useState(null);
-    const [view, setView] = useState('board'); // board | completed
+    const [view, setView] = useState(() => getStoredDashboardView()); // board | completed
 
     const fetchGames = useCallback(async () => {
         try {
@@ -25,6 +32,10 @@ export default function DashboardScreen({ token, currentUser }) {
     }, [token]);
 
     useEffect(() => { fetchGames(); }, [fetchGames]);
+
+    useEffect(() => {
+        localStorage.setItem(DASHBOARD_VIEW_KEY, view);
+    }, [view]);
 
     const handleGameUpdated = (updated) => {
         if (updated === null) {

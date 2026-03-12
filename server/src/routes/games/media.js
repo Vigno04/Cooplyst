@@ -17,6 +17,71 @@ const MEDIA_MAX_MB = Number.isFinite(parsedMediaMaxMb) && parsedMediaMaxMb > 0
     : DEFAULT_MEDIA_MAX_MB;
 const MEDIA_MAX_BYTES = Math.floor(MEDIA_MAX_MB * 1024 * 1024);
 
+function normalizeUnixTimestamp(value, fieldName, { allowNull = false } = {}) {
+    if (value === undefined) return undefined;
+    if (value === null || value === '') {
+        if (allowNull) return null;
+        throw new Error(`${fieldName} is required`);
+    }
+
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+            const parsedDate = new Date(`${trimmed}T00:00:00`);
+            if (!Number.isNaN(parsedDate.getTime())) {
+                return Math.floor(parsedDate.getTime() / 1000);
+            }
+        }
+
+        const parsedStringDate = new Date(trimmed);
+        if (!Number.isNaN(parsedStringDate.getTime())) {
+            return Math.floor(parsedStringDate.getTime() / 1000);
+        }
+    }
+
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        throw new Error(`${fieldName} must be a valid unix timestamp`);
+    }
+
+    return Math.floor(numeric);
+}
+
+function resolveRunId(gameId, rawRunId) {
+    if (rawRunId === undefined) return undefined;
+    if (rawRunId === null || rawRunId === '') return null;
+
+    const run = db.prepare('SELECT id FROM game_runs WHERE id = ? AND game_id = ?').get(rawRunId, gameId);
+    if (!run) throw new Error('Run not found');
+    return run.id;
+}
+
+function resolveUploadMeta(req, gameId, currentMedia = null) {
+    let uploadedBy = currentMedia?.uploaded_by ?? req.user.id;
+    let uploadedAt = currentMedia?.uploaded_at;
+    let runId = currentMedia?.run_id;
+
+    if (req.body.run_id !== undefined) {
+        runId = resolveRunId(gameId, req.body.run_id);
+    }
+
+    if (req.user.role === 'admin') {
+        if (req.body.uploaded_by !== undefined) {
+            const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.body.uploaded_by);
+            if (!user) throw new Error('User not found');
+            uploadedBy = user.id;
+        }
+
+        if (req.body.uploaded_at !== undefined || currentMedia) {
+            const parsed = normalizeUnixTimestamp(req.body.uploaded_at, 'uploaded_at', { allowNull: false });
+            if (parsed !== undefined) uploadedAt = parsed;
+        }
+    }
+
+    if (!uploadedAt) uploadedAt = Math.floor(Date.now() / 1000);
+    return { uploadedBy, uploadedAt, runId: runId ?? null };
+}
+
 const upload = multer({
     storage: multer.diskStorage({
         destination: (_req, _file, cb) => cb(null, UPLOAD_TMP_DIR),
@@ -55,6 +120,13 @@ module.exports = function registerMediaRoutes(router) {
             return res.status(400).json({ error: 'Media upload is only allowed for playing or completed games' });
         }
 
+        let uploadMeta;
+        try {
+            uploadMeta = resolveUploadMeta(req, game.id);
+        } catch (err) {
+            return res.status(err.message === 'User not found' || err.message === 'Run not found' ? 404 : 400).json({ error: err.message });
+        }
+
         const { chunkIndex, totalChunks, uploadId } = req.body;
 
         if (chunkIndex !== undefined && totalChunks !== undefined && uploadId) {
@@ -91,10 +163,9 @@ module.exports = function registerMediaRoutes(router) {
                 }
 
                 const id = uuidv4();
-                const runId = req.body.run_id || null;
                 db.prepare(
-                    `INSERT INTO media (id, game_id, run_id, uploaded_by, filename, mime_type) VALUES (?, ?, ?, ?, ?, ?)`
-                ).run(id, game.id, runId, req.user.id, finalFilename, req.file.mimetype);
+                    `INSERT INTO media (id, game_id, run_id, uploaded_by, filename, mime_type, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+                ).run(id, game.id, uploadMeta.runId, uploadMeta.uploadedBy, finalFilename, req.file.mimetype, uploadMeta.uploadedAt);
 
                 const media = db.prepare('SELECT * FROM media WHERE id = ?').get(id);
                 return res.status(201).json(media);
@@ -120,14 +191,48 @@ module.exports = function registerMediaRoutes(router) {
             }
 
             const id = uuidv4();
-            const runId = req.body.run_id || null;
             db.prepare(
-                `INSERT INTO media (id, game_id, run_id, uploaded_by, filename, mime_type) VALUES (?, ?, ?, ?, ?, ?)`
-            ).run(id, game.id, runId, req.user.id, filename, req.file.mimetype);
+                `INSERT INTO media (id, game_id, run_id, uploaded_by, filename, mime_type, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+            ).run(id, game.id, uploadMeta.runId, uploadMeta.uploadedBy, filename, req.file.mimetype, uploadMeta.uploadedAt);
 
             const media = db.prepare('SELECT * FROM media WHERE id = ?').get(id);
             res.status(201).json(media);
         }
+    });
+
+    // ── PATCH /api/games/:id/media/:mediaId — edit media metadata (admin) ───
+    router.patch('/:id/media/:mediaId', (req, res) => {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Admin access required' });
+        }
+
+        const media = db.prepare('SELECT * FROM media WHERE id = ? AND game_id = ?').get(req.params.mediaId, req.params.id);
+        if (!media) return res.status(404).json({ error: 'Media not found' });
+
+        let uploadMeta;
+        try {
+            uploadMeta = resolveUploadMeta(req, req.params.id, media);
+        } catch (err) {
+            return res.status(err.message === 'User not found' || err.message === 'Run not found' ? 404 : 400).json({ error: err.message });
+        }
+
+        if (
+            req.body.uploaded_by === undefined &&
+            req.body.uploaded_at === undefined &&
+            req.body.run_id === undefined
+        ) {
+            return res.status(400).json({ error: 'No media fields provided' });
+        }
+
+        db.prepare('UPDATE media SET uploaded_by = ?, uploaded_at = ?, run_id = ? WHERE id = ?').run(
+            uploadMeta.uploadedBy,
+            uploadMeta.uploadedAt,
+            uploadMeta.runId,
+            media.id
+        );
+
+        const updated = db.prepare('SELECT * FROM media WHERE id = ?').get(media.id);
+        res.json(updated);
     });
 
     // ── DELETE /api/games/:id/media/:mediaId — delete media ──────────────────

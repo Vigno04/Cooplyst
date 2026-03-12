@@ -1,60 +1,68 @@
-# Cooplyst
+<div align="center">
+  <h1>Cooplyst</h1>
+  <p><strong>A self-hosted gaming group management platform</strong></p>
 
-A gaming group management platform for proposing games, voting, managing runs, and sharing media.
+  [![Version](https://img.shields.io/github/v/release/vigno04/cooplyst)](https://github.com/vigno04/cooplyst/releases)
+  [![License](https://img.shields.io/github/license/vigno04/cooplyst)](LICENSE)
+  [![Last Commit](https://img.shields.io/github/last-commit/vigno04/cooplyst/develop)](https://github.com/vigno04/cooplyst/commits/develop)
+</div>
 
-## Version
+## What is Cooplyst?
 
-Current release target: `v0.1.0`
+Cooplyst is a self-hosted platform built for gaming groups. Propose games, vote on what to play next, track runs, and share screenshots and clips — all in one place, on your own infrastructure with full data ownership.
 
-## Local run
+- **Game board** — kanban-style view across proposed, backlog, playing, and completed states
+- **Voting** — members propose games and vote them into the backlog
+- **Run tracking** — log play sessions with start/end dates and player rosters
+- **Ratings** — per-member star ratings with group median on completed games
+- **Media gallery** — upload screenshots and videos, grouped by run or uploader, with a fullscreen lightbox viewer
+- **Notifications** — get notified when it's time to rate a completed game
+- **SSO support** — optional Authentik OIDC integration alongside local auth
+- **i18n** — English and Italian included out of the box
 
-1. Copy env template:
-	- `cp .env.example .env`
-2. Set a strong JWT secret in `.env`.
-3. Start stack:
-	- `docker compose up -d --build`
+## Getting Started
 
-Frontend is served on `http://localhost:3000`.
+The easiest way to run Cooplyst locally is with Docker Compose.
 
-## Security before publishing
+```bash
+cp .env.example .env
+# Edit .env and set a strong JWT_SECRET
+docker compose up -d --build
+```
 
-- Never commit `.env` files with real secrets.
-- Never commit DB/runtime data from `server/data`.
-- Rotate credentials if you accidentally exposed them in git history.
+Then open [http://localhost:3000](http://localhost:3000) in your browser. Look in the console for the admin credentials.
 
-## GitHub release + Docker images
+## Deploy on Your Server
 
-This repo includes workflow [docker-release.yml](.github/workflows/docker-release.yml) that builds and pushes a single Docker image to GHCR and creates a GitHub Release automatically when a tag like `v0.1.0` is pushed.
+Use [docker-compose.server.yml](docker-compose.server.yml) on your server to pull the pre-built image from GHCR.
 
-Published image:
+1. Create a `.env` file with:
 
-- `ghcr.io/<owner>/cooplyst:v0.1.0`
+```env
+JWT_SECRET=<strong-random-secret>
+```
 
-Create release:
+2. Pull and start:
 
-1. Commit changes.
-2. Tag release:
-	- `git tag -a v0.1.0 -m "First public release"`
-3. Push branch + tag:
-	- `git push origin main --tags`
+```bash
+docker compose -f docker-compose.server.yml pull
+docker compose -f docker-compose.server.yml up -d
+```
 
-The workflow will build the image (amd64 + arm64) and create the GitHub Release automatically.
+Data is persisted in the `cooplyst_data` Docker volume.
 
-## Deploy on your server (compose)
+## Contributing
 
-Use [docker-compose.server.yml](docker-compose.server.yml) on your server.
+Contributions are welcome! Feel free to open issues for bugs or feature requests, or submit a pull request.
 
-1. Create `.env` on server with:
-	- `GHCR_OWNER=<your-github-user-or-org>`
-	- `JWT_SECRET=<strong-random-secret>`
-	- `MEDIA_UPLOAD_MAX_MB=250` (optional)
-	- `AVATAR_UPLOAD_MAX_MB=25` (optional)
-2. Pull and run:
-	- `docker compose -f docker-compose.server.yml pull`
-	- `docker compose -f docker-compose.server.yml up -d`
+## License
 
-Data persists in volume `cooplyst_data`.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
-## Assets / Flags
-
-Flag images used in the UI are included under `src/assets/flags`. These flag images were created and shared by DaFluffyPotato — thanks for providing them. If you want to learn more about the original pack, check the `_notes.txt` inside the `src/assets/flags` folder.
+<div align="center">
+  <p>Made with ❤️ for gaming groups everywhere</p>
+  <p>
+    <a href="https://github.com/vigno04/cooplyst">GitHub</a> •
+    <a href="https://github.com/vigno04/cooplyst/issues">Issues</a>
+  </p>
+</div>

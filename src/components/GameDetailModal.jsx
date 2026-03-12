@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Star, ThumbsUp, ThumbsDown, Gamepad2, Play, CheckCircle, Upload, Trash2, Loader2, Image as ImageIcon, Users, User, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3, Download, Clock, AlertCircle } from 'lucide-react';
+import { X, Star, ThumbsUp, ThumbsDown, Gamepad2, Play, CheckCircle, Upload, Trash2, Loader2, Image as ImageIcon, Users, User, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3, Download, Clock, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { uploadChunked } from '../uploadWithProgress';
 import magnetIcon from '../assets/magnet-icon.png';
 import torrentIcon from '../assets/download-icon.png';
@@ -8,19 +8,72 @@ import StatusBadge from './StatusBadge';
 import AdminMetadataEditor from './AdminMetadataEditor';
 import ManageDownloadsModal from './ManageDownloadsModal';
 
+function toDateInputValue(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return value.slice(0, 10);
+    const date = new Date(value * 1000);
+    const local = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+    return local.toISOString().slice(0, 10);
+}
+
+function getCurrentDateInputValue() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function parseDateInputValue(value) {
+    if (!value) return null;
+    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function formatRunDate(value) {
+    if (!value) return null;
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return new Date(`${value}T00:00:00`).toLocaleDateString();
+    }
+    return new Date(value * 1000).toLocaleDateString();
+}
+
+function toComparableTimestamp(value, { endOfDay = false } = {}) {
+    if (value === null || value === undefined || value === '') return null;
+
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        const normalized = endOfDay ? `${value}T23:59:59` : `${value}T00:00:00`;
+        const parsed = new Date(normalized).getTime();
+        return Number.isNaN(parsed) ? null : Math.floor(parsed / 1000);
+    }
+
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+
+    const parsed = new Date(value).getTime();
+    return Number.isNaN(parsed) ? null : Math.floor(parsed / 1000);
+}
+
+function createRatingDraft(score = 0, comment = '') {
+    return {
+        score,
+        hover: 0,
+        comment,
+        isDragging: false,
+    };
+}
+
 export default function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGameUpdated, t }) {
     const [game, setGame] = useState(initialGame);
     const [loading, setLoading] = useState(true);
     const [voteLoading, setVoteLoading] = useState(false);
-    const [ratingScore, setRatingScore] = useState(0);
-    const [hoverRating, setHoverRating] = useState(0);
-    const [isDraggingRating, setIsDraggingRating] = useState(false);
-    const [ratingComment, setRatingComment] = useState('');
+    const [ratingDrafts, setRatingDrafts] = useState({});
     const [dragging, setDragging] = useState(false);
     const dragCounter = useRef(0);
     const [mediaUploads, setMediaUploads] = useState([]);
     const mediaUploadAbortMapRef = useRef(new Map());
-    const [lightboxMedia, setLightboxMedia] = useState(null);
+    const [mediaGroupMode, setMediaGroupMode] = useState('uploader');
+    const [lightboxItems, setLightboxItems] = useState([]);
+    const [lightboxIndex, setLightboxIndex] = useState(0);
     const [lightboxZoom, setLightboxZoom] = useState(1);
     const [lightboxPan, setLightboxPan] = useState({ x: 0, y: 0 });
     const [isPanning, setIsPanning] = useState(false);
@@ -28,10 +81,14 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
     const [allUsers, setAllUsers] = useState([]);
     const [adminMenuOpen, setAdminMenuOpen] = useState(false);
     const [adminEditorOpen, setAdminEditorOpen] = useState(false);
-    const [editingRunId, setEditingRunId] = useState(null);
-    const [editingRunName, setEditingRunName] = useState('');
+    const [manageRunsOpen, setManageRunsOpen] = useState(false);
+    const [editingRunDraft, setEditingRunDraft] = useState(null);
     const [editingRatingRunId, setEditingRatingRunId] = useState(null);
     const [manageDownloadsOpen, setManageDownloadsOpen] = useState(false);
+    const [manageMediaOpen, setManageMediaOpen] = useState(false);
+    const [editingMediaDraft, setEditingMediaDraft] = useState(null);
+    const [adminUploadUserId, setAdminUploadUserId] = useState(currentUser?.id || '');
+    const [adminUploadDate, setAdminUploadDate] = useState(getCurrentDateInputValue());
 
     const isAdmin = currentUser?.role === 'admin';
     const canManageDownloads = isAdmin || window?.COOPLYST_CONFIG?.allow_all_users_add_downloads === true;
@@ -70,6 +127,35 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         document.addEventListener('click', close);
         return () => document.removeEventListener('click', close);
     }, [adminMenuOpen]);
+
+    useEffect(() => {
+        if (!isAdmin) return;
+        if (!adminUploadUserId && currentUser?.id) {
+            setAdminUploadUserId(currentUser.id);
+        }
+        if (!adminUploadDate) {
+            setAdminUploadDate(getCurrentDateInputValue());
+        }
+    }, [isAdmin, currentUser?.id, adminUploadUserId, adminUploadDate]);
+
+    const updateRatingDraft = useCallback((runId, updates) => {
+        setRatingDrafts(prev => {
+            const current = prev[runId] || createRatingDraft();
+            const nextDraft = typeof updates === 'function'
+                ? updates(current)
+                : { ...current, ...updates };
+            return { ...prev, [runId]: nextDraft };
+        });
+    }, []);
+
+    const resetRatingDraft = useCallback((runId) => {
+        setRatingDrafts(prev => {
+            if (!prev[runId]) return prev;
+            const next = { ...prev };
+            delete next[runId];
+            return next;
+        });
+    }, []);
 
     const castVote = async (vote) => {
         setVoteLoading(true);
@@ -123,48 +209,69 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         } catch { /* ignore */ }
     };
 
-    const saveRunName = async (runId) => {
-        const name = editingRunName.trim();
-        if (!name) return;
+    const openRunEditor = (run) => {
+        setEditingRunDraft({
+            id: run.id,
+            name: run.name || `${t('runLabel')} #${run.run_number}`,
+            startedAt: toDateInputValue(run.started_at),
+            completedAt: toDateInputValue(run.completed_at),
+        });
+    };
+
+    const saveRunDetails = async () => {
+        if (!editingRunDraft) return;
+        const name = editingRunDraft.name.trim();
+        const startedAt = parseDateInputValue(editingRunDraft.startedAt);
+        const completedAt = editingRunDraft.completedAt ? parseDateInputValue(editingRunDraft.completedAt) : null;
+        if (!name || !startedAt) return;
+        if (editingRunDraft.completedAt && !completedAt) return;
         try {
-            const res = await fetch(`/api/games/${game.id}/runs/${runId}`, {
+            const res = await fetch(`/api/games/${game.id}/runs/${editingRunDraft.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ name }),
+                body: JSON.stringify({
+                    name,
+                    started_at: startedAt,
+                    completed_at: completedAt,
+                }),
             });
             if (res.ok) {
-                const updatedRun = await res.json();
-                setGame(prev => ({
-                    ...prev,
-                    runs: (prev.runs || []).map(r => r.id === updatedRun.id ? { ...r, name: updatedRun.name } : r),
-                }));
-                setEditingRunId(null);
-                setEditingRunName('');
+                setEditingRunDraft(null);
+                fetchDetail();
             }
         } catch { /* ignore */ }
     };
 
     const submitRating = async (runId) => {
-        if (!ratingScore) return;
-        const numericScore = parseFloat(ratingScore);
+        const draft = ratingDrafts[runId] || createRatingDraft();
+        if (!draft.score) return;
+        const numericScore = parseFloat(draft.score);
         if (isNaN(numericScore) || numericScore < 1 || numericScore > 10) return;
         try {
             const res = await fetch(`/api/games/${game.id}/runs/${runId}/rate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ score: numericScore, comment: ratingComment }),
+                body: JSON.stringify({ score: numericScore, comment: draft.comment }),
             });
             if (res.ok) {
-                setRatingScore(0);
-                setRatingComment('');
-                setEditingRatingRunId(null);
+                resetRatingDraft(runId);
+                setEditingRatingRunId(prev => (prev === runId ? null : prev));
                 fetchDetail();
                 window.dispatchEvent(new Event('cooplyst:rating_submitted'));
             }
         } catch { /* ignore */ }
     };
 
-    const uploadMedia = async (file) => {
+    const getAdminMediaUploadFields = () => {
+        if (!isAdmin) return {};
+        const uploadedAt = parseDateInputValue(adminUploadDate);
+        return {
+            uploaded_by: adminUploadUserId || currentUser?.id,
+            uploaded_at: uploadedAt || Math.floor(Date.now() / 1000),
+        };
+    };
+
+    const uploadMedia = async (file, extraFields = {}) => {
         const uploadId = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
         setMediaUploads(prev => [...prev, { id: uploadId, name: file.name, progress: 0, error: null }]);
         try {
@@ -172,6 +279,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                 url: `/api/games/${game.id}/media`,
                 token,
                 file,
+                extraFields,
                 onProgress: (pct) => {
                     setMediaUploads(prev => prev.map(u => u.id === uploadId ? { ...u, progress: pct } : u));
                 },
@@ -203,6 +311,44 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         }
     };
 
+    const queueMediaFiles = (files) => {
+        const extraFields = getAdminMediaUploadFields();
+        files.forEach(f => {
+            if (f.type.startsWith('image/') || f.type.startsWith('video/')) {
+                uploadMedia(f, extraFields);
+            }
+        });
+    };
+
+    const openMediaEditor = (media) => {
+        setEditingMediaDraft({
+            id: media.id,
+            uploadedBy: media.uploaded_by,
+            uploadedAt: toDateInputValue(media.uploaded_at),
+        });
+    };
+
+    const saveMediaDetails = async () => {
+        if (!editingMediaDraft) return;
+        const uploadedAt = parseDateInputValue(editingMediaDraft.uploadedAt);
+        if (!editingMediaDraft.uploadedBy || !uploadedAt) return;
+
+        try {
+            const res = await fetch(`/api/games/${game.id}/media/${editingMediaDraft.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    uploaded_by: editingMediaDraft.uploadedBy,
+                    uploaded_at: uploadedAt,
+                }),
+            });
+            if (res.ok) {
+                setEditingMediaDraft(null);
+                fetchDetail();
+            }
+        } catch { /* ignore */ }
+    };
+
     const cancelMediaUpload = (uploadId) => {
         const abortFn = mediaUploadAbortMapRef.current.get(uploadId);
         if (abortFn) abortFn();
@@ -229,12 +375,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         e.stopPropagation();
         setDragging(false);
         dragCounter.current = 0;
-        const files = [...(e.dataTransfer.files || [])];
-        files.forEach(f => {
-            if (f.type.startsWith('image/') || f.type.startsWith('video/')) {
-                uploadMedia(f);
-            }
-        });
+        queueMediaFiles([...(e.dataTransfer.files || [])]);
     };
 
     const deleteMedia = async (mediaId) => {
@@ -243,6 +384,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` },
             });
+            if (editingMediaDraft?.id === mediaId) setEditingMediaDraft(null);
             fetchDetail();
         } catch { /* ignore */ }
     };
@@ -346,6 +488,9 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         } catch { /* ignore */ }
     };
 
+    const lightboxMedia = lightboxItems[lightboxIndex] || null;
+    const hasLightboxNav = lightboxItems.length > 1;
+
     const lightboxSource = lightboxMedia
         ? (lightboxMedia.direct_url || `/api/media/${lightboxMedia.filename}`)
         : null;
@@ -356,6 +501,165 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         const ext = lightboxMedia.mime_type?.startsWith('video/') ? 'mp4' : 'jpg';
         return `cooplyst-media-${Date.now()}.${ext}`;
     })();
+
+    const resetLightboxView = useCallback(() => {
+        setIsPanning(false);
+        setLightboxZoom(1);
+        setLightboxPan({ x: 0, y: 0 });
+    }, []);
+
+    const closeLightbox = useCallback(() => {
+        setLightboxItems([]);
+        setLightboxIndex(0);
+        resetLightboxView();
+    }, [resetLightboxView]);
+
+    const openLightbox = useCallback((media, items = [media], initialIndex = 0) => {
+        const normalizedItems = items.length > 0 ? items : [media];
+        const resolvedIndex = initialIndex >= 0
+            ? initialIndex
+            : Math.max(0, normalizedItems.findIndex((item) => item === media || item.id === media?.id || item.direct_url === media?.direct_url));
+
+        setLightboxItems(normalizedItems);
+        setLightboxIndex(Math.min(normalizedItems.length - 1, resolvedIndex));
+        resetLightboxView();
+    }, [resetLightboxView]);
+
+    const navigateLightbox = useCallback((direction) => {
+        setLightboxIndex((current) => {
+            if (lightboxItems.length <= 1) return current;
+            return (current + direction + lightboxItems.length) % lightboxItems.length;
+        });
+        resetLightboxView();
+    }, [lightboxItems, resetLightboxView]);
+
+    const showPreviousLightboxItem = useCallback((e) => {
+        e?.stopPropagation();
+        navigateLightbox(-1);
+    }, [navigateLightbox]);
+
+    const showNextLightboxItem = useCallback((e) => {
+        e?.stopPropagation();
+        navigateLightbox(1);
+    }, [navigateLightbox]);
+
+    const handleLightboxKeyDown = useCallback((e) => {
+        if (e.key === 'Escape') {
+            closeLightbox();
+            return;
+        }
+
+        if (!hasLightboxNav) return;
+
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            showPreviousLightboxItem();
+        }
+
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            showNextLightboxItem();
+        }
+    }, [closeLightbox, hasLightboxNav, showNextLightboxItem, showPreviousLightboxItem]);
+
+    const getRunLabel = useCallback((run) => {
+        if (!run) return t('mediaUngroupedRun') || 'No run';
+        return run.name || `${t('runLabel')} #${run.run_number}`;
+    }, [t]);
+
+    const getMediaRun = useCallback((media) => {
+        const uploadedAt = toComparableTimestamp(media?.uploaded_at);
+        if (uploadedAt === null) return null;
+
+        const matchingRuns = (game.runs || []).filter((run) => {
+            const startedAt = toComparableTimestamp(run.started_at);
+            if (startedAt === null) return false;
+
+            const completedAt = run.completed_at == null ? null : toComparableTimestamp(run.completed_at, { endOfDay: true });
+            const startsBeforeUpload = uploadedAt >= startedAt;
+            const endsAfterUpload = completedAt == null || uploadedAt <= completedAt;
+
+            return startsBeforeUpload && endsAfterUpload;
+        });
+
+        if (matchingRuns.length === 0) return null;
+
+        matchingRuns.sort((left, right) => {
+            const leftStartedAt = toComparableTimestamp(left.started_at) || 0;
+            const rightStartedAt = toComparableTimestamp(right.started_at) || 0;
+            if (leftStartedAt !== rightStartedAt) return rightStartedAt - leftStartedAt;
+            return (right.run_number || 0) - (left.run_number || 0);
+        });
+
+        return matchingRuns[0];
+    }, [game.runs]);
+
+    const mediaGroups = (() => {
+        const media = game.media || [];
+        if (media.length === 0) return [];
+
+        const grouped = new Map();
+
+        for (const item of media) {
+            if (mediaGroupMode === 'run') {
+                const run = getMediaRun(item);
+                const key = run?.id || '__no-run__';
+                if (!grouped.has(key)) {
+                    grouped.set(key, {
+                        key,
+                        label: getRunLabel(run),
+                        avatar: null,
+                        isRunGroup: true,
+                        isFallback: !run,
+                        order: run?.run_number ?? Number.MAX_SAFE_INTEGER,
+                        items: [],
+                    });
+                }
+                grouped.get(key).items.push(item);
+                continue;
+            }
+
+            const key = item.uploaded_by || item.uploaded_by_username || 'unknown';
+            if (!grouped.has(key)) {
+                grouped.set(key, {
+                    key,
+                    label: item.uploaded_by_username || 'Unknown',
+                    avatar: item.uploaded_by_avatar,
+                    isRunGroup: false,
+                    isFallback: false,
+                    order: 0,
+                    items: [],
+                });
+            }
+            grouped.get(key).items.push(item);
+        }
+
+        const groups = [...grouped.values()];
+        if (mediaGroupMode === 'run') {
+            groups.sort((left, right) => {
+                if (left.order !== right.order) return left.order - right.order;
+                return left.label.localeCompare(right.label);
+            });
+        }
+        return groups;
+    })();
+
+    const screenshotLightboxItems = (game.screenshots || []).slice(0, 12).map((url) => ({
+        mime_type: 'image/custom',
+        filename: null,
+        direct_url: url,
+    }));
+    const galleryLightboxItems = mediaGroups.flatMap((group) => group.items);
+
+    const lightboxRun = lightboxMedia ? getMediaRun(lightboxMedia) : null;
+    const hasLightboxMeta = Boolean(
+        lightboxMedia && (
+            lightboxMedia.uploaded_by_username ||
+            lightboxMedia.uploaded_by_avatar ||
+            lightboxMedia.uploaded_at ||
+            lightboxRun
+        )
+    );
 
     const handleLightboxDownload = (e) => {
         e.stopPropagation();
@@ -397,9 +701,16 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                         <Download size={14} /> {t('manageDownloads') || 'Manage Downloads'}
                                     </button>
                                 )}
-                                {isAdmin && canManageDownloads && <div className="detail-admin-menu-divider" />}
                                 {isAdmin && (
                                     <>
+                                        {canManageDownloads && <div className="detail-admin-menu-divider" />}
+                                        <button onClick={() => { setManageRunsOpen(true); setEditingRunDraft(null); setAdminMenuOpen(false); }}>
+                                            <Play size={14} /> {t('adminMenuManageRuns') || 'Manage runs'}
+                                        </button>
+                                        <button onClick={() => { setManageMediaOpen(true); setEditingMediaDraft(null); setAdminMenuOpen(false); }}>
+                                            <ImageIcon size={14} /> {t('adminMenuManageMedia') || 'Manage media'}
+                                        </button>
+                                        <div className="detail-admin-menu-divider" />
                                         <button onClick={() => { setAdminEditorOpen(true); setAdminMenuOpen(false); }}>
                                             <Edit3 size={14} /> {t('adminMenuEditMetadata')}
                                         </button>
@@ -520,9 +831,9 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                 <div className="detail-section">
                                     <h3><ImageIcon size={16} /> {t('screenshotsSection')}</h3>
                                     <div className="detail-image-types">
-                                        {(game.screenshots || []).slice(0, 12).map((url, index) => (
-                                            <button key={`${url}-${index}`} className="detail-image-type" onClick={() => setLightboxMedia({ mime_type: 'image/custom', filename: null, direct_url: url })}>
-                                                <img src={url} alt="" />
+                                        {screenshotLightboxItems.map((item, index) => (
+                                            <button key={`${item.direct_url}-${index}`} className="detail-image-type" onClick={() => openLightbox(item, screenshotLightboxItems, index)}>
+                                                <img src={item.direct_url} alt="" />
                                             </button>
                                         ))}
                                     </div>
@@ -583,69 +894,43 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                             {(game.status === 'playing' || game.status === 'completed' || game.status === 'backlog') && (
                                 <div className="detail-section">
                                     <h3><Play size={16} /> {t('runsSection')}</h3>
-                                    {(game.runs || []).map(run => (
+                                    {(game.runs || []).map(run => {
+                                        const ratingDraft = ratingDrafts[run.id] || createRatingDraft();
+
+                                        return (
                                         <div key={run.id} className="run-card">
                                             <div className="run-header">
-                                                {isAdmin && editingRunId === run.id ? (
-                                                    <div className="run-name-edit">
-                                                        <input
-                                                            type="text"
-                                                            value={editingRunName}
-                                                            onChange={(e) => setEditingRunName(e.target.value)}
-                                                            className="rating-comment-input"
-                                                        />
-                                                        <button className="btn btn-sm btn-outline" onClick={() => saveRunName(run.id)}>{t('saveRunName')}</button>
-                                                        <button className="btn btn-sm btn-outline" onClick={() => { setEditingRunId(null); setEditingRunName(''); }}>{t('cancelRunName')}</button>
-                                                    </div>
-                                                ) : (
+                                                <div className="run-header-main">
                                                     <span className="run-label">{run.name || `${t('runLabel')} #${run.run_number}`}</span>
-                                                )}
+                                                    <div className="run-date-list">
+                                                        <span>{t('runStartedAt') || 'Started'}: {formatRunDate(run.started_at)}</span>
+                                                        <span>{t('runCompletedAt') || 'Completed'}: {formatRunDate(run.completed_at) || (t('notCompletedYet') || 'Not completed')}</span>
+                                                    </div>
+                                                </div>
                                                 {run.completed_at ? (
                                                     <span className="run-status run-done"><CheckCircle size={14} /> {t('completed')}</span>
                                                 ) : (
                                                     <span className="run-status run-active"><Play size={14} /> {t('inProgress')}</span>
                                                 )}
                                             </div>
-                                        {/* Run players */}
-                                        <div className="run-players">
-                                            {(run.players || []).map(p => (
-                                                <div key={p.user_id} className="run-player-avatar-wrap" title={p.username}>
-                                                    {p.avatar ? (
-                                                        <img
-                                                            src={`/api/avatars/${p.avatar_pixelated ? p.avatar.replace('.webp', '_pixel.webp') : p.avatar}`}
-                                                            alt={p.username}
-                                                            className="run-player-avatar"
-                                                        />
-                                                    ) : (
-                                                        <div className="run-player-avatar run-player-avatar--placeholder">
-                                                            <User size={13} />
-                                                        </div>
-                                                    )}
-                                                    {isAdmin && (
-                                                        <button
-                                                            className="run-player-remove"
-                                                            onClick={() => removeRunPlayer(run.id, p.user_id)}
-                                                            title={t('removePlayer')}
-                                                        >
-                                                            <X size={9} />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            ))}
-                                            {isAdmin && (
-                                                <CustomSelect
-                                                    value=""
-                                                    onChange={(userId) => { if (userId) addRunPlayer(run.id, userId); }}
-                                                    options={[
-                                                        { value: '', label: t('addPlayer') || '\u2014 Add player \u2014' },
-                                                        ...allUsers
-                                                            .filter(u => !(run.players || []).some(p => p.user_id === u.id))
-                                                            .map(u => ({ value: u.id, label: u.username }))
-                                                    ]}
-                                                    className="run-player-select"
-                                                />
-                                            )}
-                                        </div>
+                                            {/* Run players */}
+                                            <div className="run-players">
+                                                {(run.players || []).map(p => (
+                                                    <div key={p.user_id} className="run-player-avatar-wrap" title={p.username}>
+                                                        {p.avatar ? (
+                                                            <img
+                                                                src={`/api/avatars/${p.avatar_pixelated ? p.avatar.replace('.webp', '_pixel.webp') : p.avatar}`}
+                                                                alt={p.username}
+                                                                className="run-player-avatar"
+                                                            />
+                                                        ) : (
+                                                            <div className="run-player-avatar run-player-avatar--placeholder">
+                                                                <User size={13} />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
                                         {run.average_rating && (
                                                 <div className="run-avg-rating">
                                                     <Star size={14} /> {run.average_rating}/10
@@ -683,9 +968,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                                     title={t('editRating') || 'Edit rating'}
                                                                     onClick={() => {
                                                                         setEditingRatingRunId(run.id);
-                                                                        setRatingScore(r.score);
-                                                                        setHoverRating(r.score);
-                                                                        setRatingComment(r.comment || '');
+                                                                        updateRatingDraft(run.id, createRatingDraft(r.score, r.comment || ''));
                                                                     }}
                                                                     style={{ alignSelf: 'center', marginRight: isAdmin ? '4px' : '0' }}
                                                                 >
@@ -709,7 +992,6 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                             className="rating-stars"
                                                             style={{ display: 'flex', gap: '4px', touchAction: 'none', cursor: 'pointer' }}
                                                             onPointerDown={(e) => {
-                                                                setIsDraggingRating(true);
                                                                 e.currentTarget.setPointerCapture(e.pointerId);
                                                                 const rect = e.currentTarget.getBoundingClientRect();
                                                                 const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
@@ -717,8 +999,11 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                                 if (starIndex > 9) starIndex = 9;
                                                                 const relativeX = x - (starIndex * 22);
                                                                 const calculatedRating = starIndex + (relativeX < 9 ? 0.5 : 1);
-                                                                setRatingScore(calculatedRating);
-                                                                setHoverRating(calculatedRating);
+                                                                updateRatingDraft(run.id, {
+                                                                    score: calculatedRating,
+                                                                    hover: calculatedRating,
+                                                                    isDragging: true,
+                                                                });
                                                             }}
                                                             onPointerMove={(e) => {
                                                                 const rect = e.currentTarget.getBoundingClientRect();
@@ -728,22 +1013,25 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                                 const relativeX = x - (starIndex * 22);
                                                                 const calculatedRating = starIndex + (relativeX < 9 ? 0.5 : 1);
 
-                                                                setHoverRating(calculatedRating);
-                                                                if (isDraggingRating) {
-                                                                    setRatingScore(calculatedRating);
-                                                                }
+                                                                updateRatingDraft(run.id, current => ({
+                                                                    ...current,
+                                                                    hover: calculatedRating,
+                                                                    ...(current.isDragging ? { score: calculatedRating } : {}),
+                                                                }));
                                                             }}
                                                             onPointerUp={(e) => {
-                                                                setIsDraggingRating(false);
+                                                                updateRatingDraft(run.id, { isDragging: false });
                                                                 e.currentTarget.releasePointerCapture(e.pointerId);
                                                             }}
                                                             onPointerLeave={() => {
-                                                                if (!isDraggingRating) setHoverRating(0);
+                                                                updateRatingDraft(run.id, current => (
+                                                                    current.isDragging ? current : { ...current, hover: 0 }
+                                                                ));
                                                             }}
                                                         >
                                                             {[...Array(10)].map((_, i) => {
                                                                 const starIndex = i + 1;
-                                                                const currentRating = hoverRating || ratingScore || 0;
+                                                                const currentRating = ratingDraft.hover || ratingDraft.score || 0;
                                                                 const isFull = currentRating >= starIndex;
                                                                 const isHalf = currentRating === starIndex - 0.5;
 
@@ -759,26 +1047,24 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                                 );
                                                             })}
                                                         </div>
-                                                        <span style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{hoverRating || ratingScore || 0}/10</span>
+                                                        <span style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{ratingDraft.hover || ratingDraft.score || 0}/10</span>
                                                     </div>
                                                     <textarea
                                                         placeholder={t('ratingCommentPlaceholder')}
-                                                        value={ratingComment}
-                                                        onChange={e => setRatingComment(e.target.value)}
+                                                        value={ratingDraft.comment}
+                                                        onChange={e => updateRatingDraft(run.id, { comment: e.target.value })}
                                                         className="rating-comment-input"
                                                         rows={3}
                                                         style={{ resize: 'vertical', minHeight: '60px', width: '100%', marginBottom: '0.5rem', fontFamily: 'inherit' }}
                                                     />
                                                     <div style={{ display: 'flex', gap: '8px' }}>
-                                                        <button className="btn btn-primary btn-sm" onClick={() => submitRating(run.id)} disabled={!ratingScore}>
+                                                        <button className="btn btn-primary btn-sm" onClick={() => submitRating(run.id)} disabled={!ratingDraft.score}>
                                                             {t('submitRating')}
                                                         </button>
                                                         {editingRatingRunId === run.id && (
                                                             <button className="btn btn-outline btn-sm" onClick={() => {
                                                                 setEditingRatingRunId(null);
-                                                                setRatingScore(0);
-                                                                setHoverRating(0);
-                                                                setRatingComment('');
+                                                                resetRatingDraft(run.id);
                                                             }}>
                                                                 {t('cancel') || 'Cancel'}
                                                             </button>
@@ -786,25 +1072,9 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                     </div>
                                                 </div>
                                             )}
-                                            <div className="run-admin-actions">
-                                                {isAdmin && editingRunId !== run.id && (
-                                                    <button className="btn btn-sm btn-outline" onClick={() => { setEditingRunId(run.id); setEditingRunName(run.name || `${t('runLabel')} #${run.run_number}`); }}>
-                                                        <Edit3 size={14} /> {t('editRunName')}
-                                                    </button>
-                                                )}
-                                                {!run.completed_at && isAdmin && (
-                                                    <button className="btn btn-sm btn-outline" onClick={() => completeRun(run.id)}>
-                                                        <CheckCircle size={14} /> {t('completeRun')}
-                                                    </button>
-                                                )}
-                                                {isAdmin && (
-                                                    <button className="btn btn-sm btn-danger" onClick={() => deleteRun(run.id)}>
-                                                        <Trash2 size={14} /> {t('deleteRun')}
-                                                    </button>
-                                                )}
-                                            </div>
                                         </div>
-                                    ))}
+                                    );
+                                    })}
                                     {isAdmin && (
                                         <button className="btn btn-sm btn-outline" onClick={startRun} style={{ marginTop: '0.5rem' }}>
                                             <Play size={14} /> {t('startNewRun')}
@@ -827,7 +1097,27 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                         <span>{t('dropMediaHere')}</span>
                                     </div>
                                 )}
-                                <h3><ImageIcon size={16} /> {t('mediaSection')}</h3>
+                                <div className="media-section-heading">
+                                    <h3><ImageIcon size={16} /> {t('mediaSection')}</h3>
+                                    {mediaGroups.length > 0 && (
+                                        <div className="media-group-toggle" role="tablist" aria-label={t('mediaGroupBy') || 'Group media by'}>
+                                            <button
+                                                type="button"
+                                                className={`media-group-toggle-btn ${mediaGroupMode === 'uploader' ? 'active' : ''}`}
+                                                onClick={() => setMediaGroupMode('uploader')}
+                                            >
+                                                {t('mediaGroupByUploader') || 'By person'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`media-group-toggle-btn ${mediaGroupMode === 'run' ? 'active' : ''}`}
+                                                onClick={() => setMediaGroupMode('run')}
+                                            >
+                                                {t('mediaGroupByRun') || 'By run'}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                                 {mediaUploads.length > 0 && (
                                     <div className="upload-progress-list">
                                         {mediaUploads.map((u) => (
@@ -857,41 +1147,38 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                     </div>
                                 )}
                                 {(() => {
-                                    const media = game.media || [];
-                                    // Group by uploader
-                                    const grouped = {};
-                                    for (const m of media) {
-                                        const name = m.uploaded_by_username || 'Unknown';
-                                        if (!grouped[name]) grouped[name] = { avatar: m.uploaded_by_avatar, items: [] };
-                                        grouped[name].items.push(m);
-                                    }
-                                    const groups = Object.entries(grouped);
-                                    if (groups.length === 0) {
+                                    if (mediaGroups.length === 0) {
                                         return <p className="players-empty">{t('noMedia')}</p>;
                                     }
-                                    return groups.map(([username, { avatar, items }]) => (
-                                        <div key={username} className="media-group">
+                                    return mediaGroups.map((group) => (
+                                        <div key={group.key} className="media-group">
                                             <div className="media-group-header">
-                                                {avatar ? (
-                                                    <img src={`/api/avatars/${avatar}`} alt="" className="media-group-avatar" />
+                                                {group.avatar ? (
+                                                    <img src={`/api/avatars/${group.avatar}`} alt="" className="media-group-avatar" />
+                                                ) : group.isRunGroup ? (
+                                                    group.isFallback ? <AlertCircle size={14} className="player-avatar-placeholder" /> : <Play size={14} className="player-avatar-placeholder" />
                                                 ) : (
                                                     <Users size={14} className="player-avatar-placeholder" />
                                                 )}
-                                                {username}
+                                                <span className="media-group-title">{group.label}</span>
+                                                <span className="media-group-count">{group.items.length}</span>
                                             </div>
                                             <div className="media-gallery">
-                                                {items.map(m => (
-                                                    <div key={m.id} className="media-item" onClick={() => { setLightboxMedia(m); setLightboxZoom(1); setLightboxPan({ x: 0, y: 0 }); }}>
+                                                {group.items.map(m => (
+                                                    <div key={m.id} className="media-item" onClick={() => openLightbox(m, galleryLightboxItems, galleryLightboxItems.findIndex((item) => item.id === m.id))}>
                                                         {m.mime_type.startsWith('image/') ? (
                                                             <img src={`/api/media/${m.filename}`} alt="" className="media-thumb" />
                                                         ) : (
                                                             <video src={`/api/media/${m.filename}`} className="media-thumb" />
                                                         )}
-                                                        {(m.uploaded_by === currentUser?.id || isAdmin) && (
-                                                            <button className="media-delete" onClick={(e) => { e.stopPropagation(); deleteMedia(m.id); }}>
-                                                                <Trash2 size={12} />
-                                                            </button>
-                                                        )}
+                                                        <div className="media-item-footer">
+                                                            <span className="media-item-date">{formatRunDate(m.uploaded_at)}</span>
+                                                            {m.uploaded_by === currentUser?.id && (
+                                                                <button className="media-delete" onClick={(e) => { e.stopPropagation(); deleteMedia(m.id); }}>
+                                                                    <Trash2 size={12} />
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 ))}
                                             </div>
@@ -902,7 +1189,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                     <label className="btn btn-sm btn-outline media-upload-btn">
                                         <Upload size={14} /> {t('uploadMedia')}
                                         <input type="file" accept="image/*,video/*" multiple hidden onChange={e => {
-                                            [...(e.target.files || [])].forEach(f => uploadMedia(f));
+                                            queueMediaFiles([...(e.target.files || [])]);
                                             e.target.value = '';
                                         }} />
                                     </label>
@@ -919,8 +1206,8 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                 {lightboxMedia && (
                     <div
                         className="lightbox-overlay"
-                        onClick={() => setLightboxMedia(null)}
-                        onKeyDown={e => e.key === 'Escape' && setLightboxMedia(null)}
+                        onClick={closeLightbox}
+                        onKeyDown={handleLightboxKeyDown}
                         tabIndex={-1}
                         ref={el => el?.focus()}
                         onWheel={e => {
@@ -934,10 +1221,52 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                             });
                         }}
                     >
-                        <button className="lightbox-download" onClick={handleLightboxDownload} title={t('downloadMedia')} aria-label={t('downloadMedia')}>
-                            <Download size={18} />
-                        </button>
-                        <button className="lightbox-close" onClick={() => setLightboxMedia(null)}><X size={24} /></button>
+                        {hasLightboxMeta && (
+                            <div className="lightbox-meta" onClick={e => e.stopPropagation()}>
+                                {lightboxMedia.uploaded_by_avatar ? (
+                                    <img src={`/api/avatars/${lightboxMedia.uploaded_by_avatar}`} alt="" className="lightbox-meta-avatar" />
+                                ) : (
+                                    <div className="lightbox-meta-avatar lightbox-meta-avatar--placeholder">
+                                        <User size={16} />
+                                    </div>
+                                )}
+                                <div className="lightbox-meta-copy">
+                                    <div className="lightbox-meta-name">{lightboxMedia.uploaded_by_username || 'Unknown'}</div>
+                                    <div className="lightbox-meta-details">
+                                        {lightboxMedia.uploaded_at && <span>{formatRunDate(lightboxMedia.uploaded_at)}</span>}
+                                        {lightboxRun && <span className="lightbox-meta-run">{getRunLabel(lightboxRun)}</span>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        <div className="lightbox-actions" onClick={e => e.stopPropagation()}>
+                            <button className="lightbox-action-button lightbox-download" onClick={handleLightboxDownload} title={t('downloadMedia')} aria-label={t('downloadMedia')}>
+                                <Download size={18} />
+                            </button>
+                            <button className="lightbox-action-button lightbox-close" onClick={closeLightbox} aria-label={t('close') || 'Close'}>
+                                <X size={24} />
+                            </button>
+                        </div>
+                        {hasLightboxNav && (
+                            <>
+                                <button
+                                    className="lightbox-nav lightbox-nav-prev"
+                                    onClick={showPreviousLightboxItem}
+                                    aria-label={t('lightboxPrevious') || 'Previous image'}
+                                    title={t('lightboxPrevious') || 'Previous image'}
+                                >
+                                    <ChevronLeft size={24} />
+                                </button>
+                                <button
+                                    className="lightbox-nav lightbox-nav-next"
+                                    onClick={showNextLightboxItem}
+                                    aria-label={t('lightboxNext') || 'Next image'}
+                                    title={t('lightboxNext') || 'Next image'}
+                                >
+                                    <ChevronRight size={24} />
+                                </button>
+                            </>
+                        )}
                         {lightboxZoom > 1 && (
                             <div className="lightbox-zoom-badge">{Math.round(lightboxZoom * 100)}%</div>
                         )}
@@ -991,6 +1320,274 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                     }}
                     t={t}
                 />
+                {manageRunsOpen && (
+                    <div className="modal-overlay" onClick={() => { setManageRunsOpen(false); setEditingRunDraft(null); }}>
+                        <div className="modal-content modal-detail modal-admin-manage" onClick={e => e.stopPropagation()}>
+                            <div className="modal-header">
+                                <h2>{t('adminManageRuns') || 'Manage Runs'}</h2>
+                                <button className="modal-close" onClick={() => { setManageRunsOpen(false); setEditingRunDraft(null); }} aria-label="Close"><X size={20} /></button>
+                            </div>
+                            <div className="admin-manage-toolbar">
+                                <button className="btn btn-sm btn-outline" onClick={startRun}>
+                                    <Play size={14} /> {t('startNewRun')}
+                                </button>
+                            </div>
+                            {(game.runs || []).length === 0 ? (
+                                <p className="players-empty">{t('noRunsYet') || 'No runs yet'}</p>
+                            ) : (
+                                <div className="admin-manage-stack">
+                                    {(game.runs || []).map(run => (
+                                        <div key={run.id} className="run-card">
+                                            <div className="run-header">
+                                                <div className="run-header-main">
+                                                    <span className="run-label">{run.name || `${t('runLabel')} #${run.run_number}`}</span>
+                                                    <div className="run-date-list">
+                                                        <span>{t('runStartedAt') || 'Started'}: {formatRunDate(run.started_at)}</span>
+                                                        <span>{t('runCompletedAt') || 'Completed'}: {formatRunDate(run.completed_at) || (t('notCompletedYet') || 'Not completed')}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="run-header-actions">
+                                                    {run.completed_at ? (
+                                                        <span className="run-status run-done"><CheckCircle size={14} /> {t('completed')}</span>
+                                                    ) : (
+                                                        <span className="run-status run-active"><Play size={14} /> {t('inProgress')}</span>
+                                                    )}
+                                                    <button className="btn btn-sm btn-outline" onClick={() => openRunEditor(run)}>
+                                                        <Edit3 size={14} /> {t('editRunDetails') || 'Edit run details'}
+                                                    </button>
+                                                    {!run.completed_at && (
+                                                        <button className="btn btn-sm btn-outline" onClick={() => completeRun(run.id)}>
+                                                            <CheckCircle size={14} /> {t('completeRun')}
+                                                        </button>
+                                                    )}
+                                                    <button className="btn btn-sm btn-danger" onClick={() => deleteRun(run.id)}>
+                                                        <Trash2 size={14} /> {t('deleteRun')}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="run-players">
+                                                {(run.players || []).map(p => (
+                                                    <div key={p.user_id} className="run-player-avatar-wrap" title={p.username}>
+                                                        {p.avatar ? (
+                                                            <img
+                                                                src={`/api/avatars/${p.avatar_pixelated ? p.avatar.replace('.webp', '_pixel.webp') : p.avatar}`}
+                                                                alt={p.username}
+                                                                className="run-player-avatar"
+                                                            />
+                                                        ) : (
+                                                            <div className="run-player-avatar run-player-avatar--placeholder">
+                                                                <User size={13} />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {editingRunDraft?.id === run.id && (
+                                                <div className="run-editor-card">
+                                                    <div className="run-editor-grid">
+                                                        <label className="run-editor-field">
+                                                            <span>{t('editRunName') || 'Run name'}</span>
+                                                            <input
+                                                                type="text"
+                                                                value={editingRunDraft.name}
+                                                                onChange={(e) => setEditingRunDraft(prev => ({ ...prev, name: e.target.value }))}
+                                                                className="rating-comment-input"
+                                                            />
+                                                        </label>
+                                                        <label className="run-editor-field">
+                                                            <span>{t('runStartedAt') || 'Started at'}</span>
+                                                            <input
+                                                                type="date"
+                                                                value={editingRunDraft.startedAt}
+                                                                onChange={(e) => setEditingRunDraft(prev => ({ ...prev, startedAt: e.target.value }))}
+                                                                className="rating-comment-input"
+                                                            />
+                                                        </label>
+                                                        <label className="run-editor-field">
+                                                            <span>{t('runCompletedAt') || 'Completed at'}</span>
+                                                            <input
+                                                                type="date"
+                                                                value={editingRunDraft.completedAt}
+                                                                onChange={(e) => setEditingRunDraft(prev => ({ ...prev, completedAt: e.target.value }))}
+                                                                className="rating-comment-input"
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                    <div className="run-editor-subtitle">{t('playersSection')}</div>
+                                                    <div className="run-players run-players--editing">
+                                                        {(run.players || []).map(p => (
+                                                            <div key={p.user_id} className="run-player-avatar-wrap" title={p.username}>
+                                                                {p.avatar ? (
+                                                                    <img
+                                                                        src={`/api/avatars/${p.avatar_pixelated ? p.avatar.replace('.webp', '_pixel.webp') : p.avatar}`}
+                                                                        alt={p.username}
+                                                                        className="run-player-avatar"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="run-player-avatar run-player-avatar--placeholder">
+                                                                        <User size={13} />
+                                                                    </div>
+                                                                )}
+                                                                <button
+                                                                    className="run-player-remove run-player-remove--visible"
+                                                                    onClick={() => removeRunPlayer(run.id, p.user_id)}
+                                                                    title={t('removePlayer')}
+                                                                >
+                                                                    <X size={9} />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                        <CustomSelect
+                                                            value=""
+                                                            onChange={(userId) => { if (userId) addRunPlayer(run.id, userId); }}
+                                                            options={[
+                                                                { value: '', label: t('addPlayer') || '\u2014 Add player \u2014' },
+                                                                ...allUsers
+                                                                    .filter(u => !(run.players || []).some(p => p.user_id === u.id))
+                                                                    .map(u => ({ value: u.id, label: u.username }))
+                                                            ]}
+                                                            className="run-player-select"
+                                                        />
+                                                    </div>
+                                                    <div className="run-editor-actions">
+                                                        <button className="btn btn-sm btn-primary" onClick={saveRunDetails}>{t('saveRunName') || 'Save'}</button>
+                                                        <button className="btn btn-sm btn-outline" onClick={() => setEditingRunDraft(null)}>{t('cancelRunName') || 'Cancel'}</button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+                {manageMediaOpen && (
+                    <div className="modal-overlay" onClick={() => { setManageMediaOpen(false); setEditingMediaDraft(null); }}>
+                        <div className="modal-content modal-detail modal-admin-manage" onClick={e => e.stopPropagation()}>
+                            <div className="modal-header">
+                                <h2>{t('adminManageMedia') || 'Manage Media'}</h2>
+                                <button className="modal-close" onClick={() => { setManageMediaOpen(false); setEditingMediaDraft(null); }} aria-label="Close"><X size={20} /></button>
+                            </div>
+                            {canUploadMedia ? (
+                                <div className="media-editor-card">
+                                    <div className="run-editor-grid media-upload-grid">
+                                        <label className="run-editor-field">
+                                            <span>{t('uploadAsUser') || 'Upload as user'}</span>
+                                            <CustomSelect
+                                                value={adminUploadUserId}
+                                                onChange={(value) => setAdminUploadUserId(value)}
+                                                options={allUsers.map(user => ({ value: user.id, label: user.username }))}
+                                                className="run-player-select"
+                                            />
+                                        </label>
+                                        <label className="run-editor-field">
+                                            <span>{t('uploadAtDate') || 'Upload date'}</span>
+                                            <input
+                                                type="date"
+                                                value={adminUploadDate}
+                                                onChange={(e) => setAdminUploadDate(e.target.value)}
+                                                className="rating-comment-input"
+                                            />
+                                        </label>
+                                    </div>
+                                    <div className="media-editor-hint">{t('adminMediaUploadHint') || 'Every file you upload now will use this user and date until you change them.'}</div>
+                                    <label className="btn btn-sm btn-outline media-upload-btn" style={{ marginTop: '0.75rem' }}>
+                                        <Upload size={14} /> {t('uploadMedia')}
+                                        <input type="file" accept="image/*,video/*" multiple hidden onChange={e => {
+                                            queueMediaFiles([...(e.target.files || [])]);
+                                            e.target.value = '';
+                                        }} />
+                                    </label>
+                                </div>
+                            ) : (
+                                <p className="players-empty">{t('mediaUploadLocked')}</p>
+                            )}
+                            {mediaUploads.length > 0 && (
+                                <div className="upload-progress-list">
+                                    {mediaUploads.map((u) => (
+                                        <div key={u.id} className="upload-progress-card">
+                                            <div className="upload-progress-meta">
+                                                <span>{u.name}</span>
+                                                <div className="upload-progress-actions">
+                                                    <span>{u.error ? t('uploadFailed') : `${u.progress}%`}</span>
+                                                    {!u.error && u.progress < 100 && (
+                                                        <button
+                                                            type="button"
+                                                            className="upload-progress-cancel"
+                                                            onClick={() => cancelMediaUpload(u.id)}
+                                                            aria-label="Cancel upload"
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="upload-progress-track">
+                                                <div className="upload-progress-fill" style={{ width: `${u.error ? 100 : u.progress}%` }} />
+                                            </div>
+                                            {u.error && <div className="upload-progress-error">{u.error}</div>}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="admin-media-manage-grid">
+                                {(game.media || []).map(m => (
+                                    <div key={m.id} className="admin-media-manage-item">
+                                        <div className="admin-media-manage-preview" onClick={() => openLightbox(m, game.media || [], (game.media || []).findIndex((item) => item.id === m.id))}>
+                                            {m.mime_type.startsWith('image/') ? (
+                                                <img src={`/api/media/${m.filename}`} alt="" className="media-thumb" />
+                                            ) : (
+                                                <video src={`/api/media/${m.filename}`} className="media-thumb" />
+                                            )}
+                                        </div>
+                                        <div className="admin-media-manage-meta">
+                                            <div>{m.uploaded_by_username || 'Unknown'}</div>
+                                            <div>{formatRunDate(m.uploaded_at)}</div>
+                                        </div>
+                                        <div className="run-editor-actions">
+                                            <button className="btn btn-sm btn-outline" onClick={() => openMediaEditor(m)}>
+                                                <Edit3 size={14} /> {t('editMediaDetails') || 'Edit media details'}
+                                            </button>
+                                            <button className="btn btn-sm btn-danger" onClick={() => deleteMedia(m.id)}>
+                                                <Trash2 size={14} /> {t('deleteMediaItem') || 'Delete media'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            {isAdmin && editingMediaDraft && (
+                                <div className="media-editor-card">
+                                    <div className="run-editor-subtitle">{t('editMediaDetails') || 'Edit media details'}</div>
+                                    <div className="run-editor-grid media-upload-grid">
+                                        <label className="run-editor-field">
+                                            <span>{t('uploadAsUser') || 'Upload as user'}</span>
+                                            <CustomSelect
+                                                value={editingMediaDraft.uploadedBy}
+                                                onChange={(value) => setEditingMediaDraft(prev => ({ ...prev, uploadedBy: value }))}
+                                                options={allUsers.map(user => ({ value: user.id, label: user.username }))}
+                                                className="run-player-select"
+                                            />
+                                        </label>
+                                        <label className="run-editor-field">
+                                            <span>{t('uploadAtDate') || 'Upload date'}</span>
+                                            <input
+                                                type="date"
+                                                value={editingMediaDraft.uploadedAt}
+                                                onChange={(e) => setEditingMediaDraft(prev => ({ ...prev, uploadedAt: e.target.value }))}
+                                                className="rating-comment-input"
+                                            />
+                                        </label>
+                                    </div>
+                                    <div className="run-editor-actions">
+                                        <button className="btn btn-sm btn-primary" onClick={saveMediaDetails}>{t('saveMediaDetails') || t('saveRunName') || 'Save'}</button>
+                                        <button className="btn btn-sm btn-outline" onClick={() => setEditingMediaDraft(null)}>{t('cancelRunName') || 'Cancel'}</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
                 {manageDownloadsOpen && (
                     <ManageDownloadsModal
                         gameId={game.id}
