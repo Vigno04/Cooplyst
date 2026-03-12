@@ -207,6 +207,8 @@
     "saveMediaDetails": "SALVA DETTAGLI MEDIA",
     "deleteMediaItem": "ELIMINA MEDIA",
     "downloadMedia": "Scarica",
+    "lightboxPrevious": "Immagine precedente",
+    "lightboxNext": "Immagine successiva",
     "adminControls": "CONTROLLI ADMIN",
     "deleteGame": "ELIMINA GIOCO",
     "deleteGameConfirm": "Sei sicuro di voler eliminare questo gioco? Non si può annullare.",

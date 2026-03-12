@@ -20,6 +20,12 @@ function decodeToken(token) {
 }
 
 const TOKEN_KEY = 'cooplyst_token';
+const ACTIVE_PAGE_KEY = 'cooplyst_active_page';
+
+function getStoredActivePage() {
+    const stored = localStorage.getItem(ACTIVE_PAGE_KEY);
+    return stored === 'profile' || stored === 'admin' ? stored : null;
+}
 
 function App() {
     const { t, i18n } = useTranslation();
@@ -52,7 +58,7 @@ function App() {
     // UI state
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
     const [notificationsDropdownOpen, setNotificationsDropdownOpen] = useState(false);
-    const [activePage, setActivePage] = useState(null); // null | 'profile' | 'admin'
+    const [activePage, setActivePage] = useState(() => getStoredActivePage()); // null | 'profile' | 'admin'
     const [ssoLinkStatus, setSsoLinkStatus] = useState(null); // { type, msg } passed to ProfileScreen
 
     // Notification state
@@ -118,6 +124,14 @@ function App() {
 
     useEffect(() => { fetchConfig(); }, []);
 
+    useEffect(() => {
+        if (activePage) {
+            localStorage.setItem(ACTIVE_PAGE_KEY, activePage);
+            return;
+        }
+        localStorage.removeItem(ACTIVE_PAGE_KEY);
+    }, [activePage]);
+
     // Fetch avatar when logged in
     useEffect(() => {
         if (!token) return;
@@ -158,6 +172,12 @@ function App() {
             window.removeEventListener('cooplyst:rating_submitted', handleOpenGame);
         };
     }, [token]);
+
+    useEffect(() => {
+        if (activePage === 'admin' && currentUser?.role !== 'admin') {
+            setActivePage(null);
+        }
+    }, [activePage, currentUser]);
 
     // ── Handle SSO token / error returned in URL hash ────────────────────────
     useEffect(() => {

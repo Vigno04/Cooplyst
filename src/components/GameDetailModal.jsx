@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Star, ThumbsUp, ThumbsDown, Gamepad2, Play, CheckCircle, Upload, Trash2, Loader2, Image as ImageIcon, Users, User, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3, Download, Clock, AlertCircle } from 'lucide-react';
+import { X, Star, ThumbsUp, ThumbsDown, Gamepad2, Play, CheckCircle, Upload, Trash2, Loader2, Image as ImageIcon, Users, User, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3, Download, Clock, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { uploadChunked } from '../uploadWithProgress';
 import magnetIcon from '../assets/magnet-icon.png';
 import torrentIcon from '../assets/download-icon.png';
@@ -72,7 +72,8 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
     const [mediaUploads, setMediaUploads] = useState([]);
     const mediaUploadAbortMapRef = useRef(new Map());
     const [mediaGroupMode, setMediaGroupMode] = useState('uploader');
-    const [lightboxMedia, setLightboxMedia] = useState(null);
+    const [lightboxItems, setLightboxItems] = useState([]);
+    const [lightboxIndex, setLightboxIndex] = useState(0);
     const [lightboxZoom, setLightboxZoom] = useState(1);
     const [lightboxPan, setLightboxPan] = useState({ x: 0, y: 0 });
     const [isPanning, setIsPanning] = useState(false);
@@ -487,6 +488,9 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         } catch { /* ignore */ }
     };
 
+    const lightboxMedia = lightboxItems[lightboxIndex] || null;
+    const hasLightboxNav = lightboxItems.length > 1;
+
     const lightboxSource = lightboxMedia
         ? (lightboxMedia.direct_url || `/api/media/${lightboxMedia.filename}`)
         : null;
@@ -498,19 +502,65 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         return `cooplyst-media-${Date.now()}.${ext}`;
     })();
 
-    const closeLightbox = useCallback(() => {
-        setLightboxMedia(null);
+    const resetLightboxView = useCallback(() => {
         setIsPanning(false);
         setLightboxZoom(1);
         setLightboxPan({ x: 0, y: 0 });
     }, []);
 
-    const openLightbox = useCallback((media) => {
-        setLightboxMedia(media);
-        setIsPanning(false);
-        setLightboxZoom(1);
-        setLightboxPan({ x: 0, y: 0 });
-    }, []);
+    const closeLightbox = useCallback(() => {
+        setLightboxItems([]);
+        setLightboxIndex(0);
+        resetLightboxView();
+    }, [resetLightboxView]);
+
+    const openLightbox = useCallback((media, items = [media], initialIndex = 0) => {
+        const normalizedItems = items.length > 0 ? items : [media];
+        const resolvedIndex = initialIndex >= 0
+            ? initialIndex
+            : Math.max(0, normalizedItems.findIndex((item) => item === media || item.id === media?.id || item.direct_url === media?.direct_url));
+
+        setLightboxItems(normalizedItems);
+        setLightboxIndex(Math.min(normalizedItems.length - 1, resolvedIndex));
+        resetLightboxView();
+    }, [resetLightboxView]);
+
+    const navigateLightbox = useCallback((direction) => {
+        setLightboxIndex((current) => {
+            if (lightboxItems.length <= 1) return current;
+            return (current + direction + lightboxItems.length) % lightboxItems.length;
+        });
+        resetLightboxView();
+    }, [lightboxItems, resetLightboxView]);
+
+    const showPreviousLightboxItem = useCallback((e) => {
+        e?.stopPropagation();
+        navigateLightbox(-1);
+    }, [navigateLightbox]);
+
+    const showNextLightboxItem = useCallback((e) => {
+        e?.stopPropagation();
+        navigateLightbox(1);
+    }, [navigateLightbox]);
+
+    const handleLightboxKeyDown = useCallback((e) => {
+        if (e.key === 'Escape') {
+            closeLightbox();
+            return;
+        }
+
+        if (!hasLightboxNav) return;
+
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            showPreviousLightboxItem();
+        }
+
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            showNextLightboxItem();
+        }
+    }, [closeLightbox, hasLightboxNav, showNextLightboxItem, showPreviousLightboxItem]);
 
     const getRunLabel = useCallback((run) => {
         if (!run) return t('mediaUngroupedRun') || 'No run';
@@ -593,6 +643,13 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         }
         return groups;
     })();
+
+    const screenshotLightboxItems = (game.screenshots || []).slice(0, 12).map((url) => ({
+        mime_type: 'image/custom',
+        filename: null,
+        direct_url: url,
+    }));
+    const galleryLightboxItems = mediaGroups.flatMap((group) => group.items);
 
     const lightboxRun = lightboxMedia ? getMediaRun(lightboxMedia) : null;
     const hasLightboxMeta = Boolean(
@@ -774,9 +831,9 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                 <div className="detail-section">
                                     <h3><ImageIcon size={16} /> {t('screenshotsSection')}</h3>
                                     <div className="detail-image-types">
-                                        {(game.screenshots || []).slice(0, 12).map((url, index) => (
-                                            <button key={`${url}-${index}`} className="detail-image-type" onClick={() => openLightbox({ mime_type: 'image/custom', filename: null, direct_url: url })}>
-                                                <img src={url} alt="" />
+                                        {screenshotLightboxItems.map((item, index) => (
+                                            <button key={`${item.direct_url}-${index}`} className="detail-image-type" onClick={() => openLightbox(item, screenshotLightboxItems, index)}>
+                                                <img src={item.direct_url} alt="" />
                                             </button>
                                         ))}
                                     </div>
@@ -1108,7 +1165,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                             </div>
                                             <div className="media-gallery">
                                                 {group.items.map(m => (
-                                                    <div key={m.id} className="media-item" onClick={() => openLightbox(m)}>
+                                                    <div key={m.id} className="media-item" onClick={() => openLightbox(m, galleryLightboxItems, galleryLightboxItems.findIndex((item) => item.id === m.id))}>
                                                         {m.mime_type.startsWith('image/') ? (
                                                             <img src={`/api/media/${m.filename}`} alt="" className="media-thumb" />
                                                         ) : (
@@ -1150,7 +1207,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                     <div
                         className="lightbox-overlay"
                         onClick={closeLightbox}
-                        onKeyDown={e => e.key === 'Escape' && closeLightbox()}
+                        onKeyDown={handleLightboxKeyDown}
                         tabIndex={-1}
                         ref={el => el?.focus()}
                         onWheel={e => {
@@ -1182,10 +1239,34 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                 </div>
                             </div>
                         )}
-                        <button className="lightbox-download" onClick={handleLightboxDownload} title={t('downloadMedia')} aria-label={t('downloadMedia')}>
-                            <Download size={18} />
-                        </button>
-                        <button className="lightbox-close" onClick={closeLightbox}><X size={24} /></button>
+                        <div className="lightbox-actions" onClick={e => e.stopPropagation()}>
+                            <button className="lightbox-action-button lightbox-download" onClick={handleLightboxDownload} title={t('downloadMedia')} aria-label={t('downloadMedia')}>
+                                <Download size={18} />
+                            </button>
+                            <button className="lightbox-action-button lightbox-close" onClick={closeLightbox} aria-label={t('close') || 'Close'}>
+                                <X size={24} />
+                            </button>
+                        </div>
+                        {hasLightboxNav && (
+                            <>
+                                <button
+                                    className="lightbox-nav lightbox-nav-prev"
+                                    onClick={showPreviousLightboxItem}
+                                    aria-label={t('lightboxPrevious') || 'Previous image'}
+                                    title={t('lightboxPrevious') || 'Previous image'}
+                                >
+                                    <ChevronLeft size={24} />
+                                </button>
+                                <button
+                                    className="lightbox-nav lightbox-nav-next"
+                                    onClick={showNextLightboxItem}
+                                    aria-label={t('lightboxNext') || 'Next image'}
+                                    title={t('lightboxNext') || 'Next image'}
+                                >
+                                    <ChevronRight size={24} />
+                                </button>
+                            </>
+                        )}
                         {lightboxZoom > 1 && (
                             <div className="lightbox-zoom-badge">{Math.round(lightboxZoom * 100)}%</div>
                         )}
@@ -1453,7 +1534,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                             <div className="admin-media-manage-grid">
                                 {(game.media || []).map(m => (
                                     <div key={m.id} className="admin-media-manage-item">
-                                        <div className="admin-media-manage-preview" onClick={() => openLightbox(m)}>
+                                        <div className="admin-media-manage-preview" onClick={() => openLightbox(m, game.media || [], (game.media || []).findIndex((item) => item.id === m.id))}>
                                             {m.mime_type.startsWith('image/') ? (
                                                 <img src={`/api/media/${m.filename}`} alt="" className="media-thumb" />
                                             ) : (
