@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Star, ThumbsUp, ThumbsDown, Gamepad2, Play, CheckCircle, Upload, Trash2, Loader2, Image as ImageIcon, Users, User, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3, Download, Clock, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Star, ThumbsUp, ThumbsDown, Gamepad2, Play, CheckCircle, Upload, Trash2, Loader2, Image as ImageIcon, Users, User, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3, Download, Clock, AlertCircle, ChevronLeft, ChevronRight, Link, Check } from 'lucide-react';
 import { uploadChunked } from '../uploadWithProgress';
 import magnetIcon from '../assets/magnet-icon.png';
 import torrentIcon from '../assets/download-icon.png';
@@ -62,9 +62,28 @@ function createRatingDraft(score = 0, comment = '') {
     };
 }
 
-export default function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGameUpdated, t }) {
+function copyToClipboard(text) {
+    if (navigator.clipboard?.writeText) {
+        return navigator.clipboard.writeText(text);
+    }
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+    } catch { /* ignore */ }
+    return Promise.resolve();
+}
+
+export default function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGameUpdated, initialMediaId, t }) {
     const [game, setGame] = useState(initialGame);
     const [loading, setLoading] = useState(true);
+    const [shareCopied, setShareCopied] = useState(false);
+    const [lightboxShareCopied, setLightboxShareCopied] = useState(false);
+    const openedInitialMediaRef = useRef(false);
     const [voteLoading, setVoteLoading] = useState(false);
     const [ratingDrafts, setRatingDrafts] = useState({});
     const [dragging, setDragging] = useState(false);
@@ -512,7 +531,19 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         setLightboxItems([]);
         setLightboxIndex(0);
         resetLightboxView();
+        // Strip /media/{id} from the URL hash so a refresh doesn't re-open the lightbox
+        if (/\/media\//.test(window.location.hash)) {
+            const cleaned = window.location.hash.replace(/\/media\/[^/?#]*/, '');
+            window.history.replaceState(null, '', window.location.pathname + cleaned);
+        }
     }, [resetLightboxView]);
+
+    const updateLightboxHash = useCallback((mediaItem) => {
+        if (!mediaItem?.id) return;
+        const gameHash = window.location.hash.replace(/\/media\/[^/?#]*/, '').replace(/^#\/game\/[^/?#]+/, match => match) || `#/game/${game.id}`;
+        const base = gameHash.replace(/\/media\/[^/?#]*/, '');
+        window.history.replaceState(null, '', window.location.pathname + base + `/media/${mediaItem.id}`);
+    }, [game.id]);
 
     const openLightbox = useCallback((media, items = [media], initialIndex = 0) => {
         const normalizedItems = items.length > 0 ? items : [media];
@@ -520,18 +551,22 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
             ? initialIndex
             : Math.max(0, normalizedItems.findIndex((item) => item === media || item.id === media?.id || item.direct_url === media?.direct_url));
 
+        const finalIndex = Math.min(normalizedItems.length - 1, resolvedIndex);
         setLightboxItems(normalizedItems);
-        setLightboxIndex(Math.min(normalizedItems.length - 1, resolvedIndex));
+        setLightboxIndex(finalIndex);
         resetLightboxView();
-    }, [resetLightboxView]);
+        updateLightboxHash(normalizedItems[finalIndex]);
+    }, [resetLightboxView, updateLightboxHash]);
 
     const navigateLightbox = useCallback((direction) => {
         setLightboxIndex((current) => {
             if (lightboxItems.length <= 1) return current;
-            return (current + direction + lightboxItems.length) % lightboxItems.length;
+            const next = (current + direction + lightboxItems.length) % lightboxItems.length;
+            updateLightboxHash(lightboxItems[next]);
+            return next;
         });
         resetLightboxView();
-    }, [lightboxItems, resetLightboxView]);
+    }, [lightboxItems, resetLightboxView, updateLightboxHash]);
 
     const showPreviousLightboxItem = useCallback((e) => {
         e?.stopPropagation();
@@ -674,6 +709,33 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         document.body.removeChild(link);
     };
 
+    // Auto-open a specific media item when deep-linked (initialMediaId)
+    useEffect(() => {
+        if (loading || !initialMediaId || openedInitialMediaRef.current) return;
+        const allMedia = game.media || [];
+        const idx = allMedia.findIndex(m => String(m.id) === String(initialMediaId));
+        if (idx === -1) return;
+        openedInitialMediaRef.current = true;
+        openLightbox(allMedia[idx], allMedia, idx);
+    }, [loading, initialMediaId, game, openLightbox]);
+
+    const handleShareGame = () => {
+        // Use the current hash (minus any /media/ suffix) so the link reflects the current view context
+        const baseHash = window.location.hash.replace(/\/media\/[^/?#]*/, '') || `#/game/${game.id}`;
+        const url = `${window.location.origin}${window.location.pathname}${baseHash}`;
+        const done = () => { setShareCopied(true); setTimeout(() => setShareCopied(false), 1500); };
+        copyToClipboard(url).then(done).catch(() => done());
+    };
+
+    const handleShareLightboxMedia = (e) => {
+        e.stopPropagation();
+        if (!lightboxMedia?.id) return;
+        const baseHash = window.location.hash.replace(/\/media\/[^/?#]*/, '') || `#/game/${game.id}`;
+        const url = `${window.location.origin}${window.location.pathname}${baseHash}/media/${lightboxMedia.id}`;
+        const done = () => { setLightboxShareCopied(true); setTimeout(() => setLightboxShareCopied(false), 1500); };
+        copyToClipboard(url).then(done).catch(() => done());
+    };
+
     const canVote = game.status === 'proposed' || game.status === 'voting';
     const canUploadMedia = game.status === 'playing' || game.status === 'completed';
     const statuses = ['proposed', 'voting', 'backlog', 'playing', 'completed'];
@@ -686,6 +748,14 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal-content modal-detail" onClick={e => e.stopPropagation()}>
                 <button className="modal-close" onClick={onClose}><X size={20} /></button>
+                <button
+                    className={`detail-share-btn${shareCopied ? ' detail-share-btn--copied' : ''}`}
+                    onClick={handleShareGame}
+                    title={shareCopied ? (t('linkCopied') || 'Copied!') : (t('shareGame') || 'Copy link')}
+                    aria-label={t('shareGame') || 'Copy link'}
+                >
+                    {shareCopied ? <Check size={18} /> : <Link size={18} />}
+                </button>
                 {(isAdmin || canManageDownloads) && (
                     <div className="detail-admin-menu-wrap">
                         <button
@@ -1240,6 +1310,16 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                             </div>
                         )}
                         <div className="lightbox-actions" onClick={e => e.stopPropagation()}>
+                            {lightboxMedia?.id && (
+                                <button
+                                    className={`lightbox-action-button lightbox-share${lightboxShareCopied ? ' lightbox-share--copied' : ''}`}
+                                    onClick={handleShareLightboxMedia}
+                                    title={lightboxShareCopied ? (t('linkCopied') || 'Copied!') : (t('shareImage') || 'Copy image link')}
+                                    aria-label={t('shareImage') || 'Copy image link'}
+                                >
+                                    {lightboxShareCopied ? <Check size={18} /> : <Link size={18} />}
+                                </button>
+                            )}
                             <button className="lightbox-action-button lightbox-download" onClick={handleLightboxDownload} title={t('downloadMedia')} aria-label={t('downloadMedia')}>
                                 <Download size={18} />
                             </button>
@@ -1272,6 +1352,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                         )}
                         {lightboxMedia.mime_type.startsWith('image/') ? (
                             <img
+                                key={lightboxMedia.direct_url || lightboxMedia.filename}
                                 src={lightboxMedia.direct_url || `/api/media/${lightboxMedia.filename}`}
                                 alt=""
                                 className="lightbox-img"
@@ -1304,7 +1385,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                 onMouseLeave={() => setIsPanning(false)}
                             />
                         ) : (
-                            <video src={lightboxMedia.direct_url || `/api/media/${lightboxMedia.filename}`} className="lightbox-video" controls autoPlay onClick={e => e.stopPropagation()} />
+                            <video key={lightboxMedia.direct_url || lightboxMedia.filename} src={lightboxMedia.direct_url || `/api/media/${lightboxMedia.filename}`} className="lightbox-video" controls autoPlay onClick={e => e.stopPropagation()} />
                         )}
                     </div>
                 )}

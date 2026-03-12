@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Gamepad2, Trophy, Clock, Play, ChevronRight, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import GameCard from '../components/GameCard';
@@ -13,13 +13,24 @@ function getStoredDashboardView() {
     return stored === 'completed' ? 'completed' : 'board';
 }
 
+function viewHashPrefix(view) {
+    return view === 'completed' ? '#/completed' : '';
+}
+
 export default function DashboardScreen({ token, currentUser }) {
     const { t } = useTranslation();
     const [games, setGames] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showPropose, setShowPropose] = useState(false);
     const [selectedGame, setSelectedGame] = useState(null);
-    const [view, setView] = useState(() => getStoredDashboardView()); // board | completed
+    const [selectedMediaId, setSelectedMediaId] = useState(null);
+    const [view, setView] = useState(() => {
+        if (/^#\/completed/.test(window.location.hash)) return 'completed';
+        return getStoredDashboardView();
+    }); // board | completed
+    // Use a ref so openGame/closeGame always read the current view without stale closure
+    const viewRef = useRef(view);
+    useEffect(() => { viewRef.current = view; }, [view]);
 
     const fetchGames = useCallback(async () => {
         try {
@@ -33,9 +44,15 @@ export default function DashboardScreen({ token, currentUser }) {
 
     useEffect(() => { fetchGames(); }, [fetchGames]);
 
-    useEffect(() => {
-        localStorage.setItem(DASHBOARD_VIEW_KEY, view);
-    }, [view]);
+    const handleViewChange = useCallback((newView) => {
+        setView(newView);
+        viewRef.current = newView;
+        localStorage.setItem(DASHBOARD_VIEW_KEY, newView);
+        // Only update hash when no game is open, to avoid clobbering the game hash
+        if (!selectedGame) {
+            window.history.replaceState(null, '', window.location.pathname + viewHashPrefix(newView));
+        }
+    }, [selectedGame]);
 
     const handleGameUpdated = (updated) => {
         if (updated === null) {
@@ -58,21 +75,34 @@ export default function DashboardScreen({ token, currentUser }) {
 
     const openGame = useCallback((game) => {
         setSelectedGame(game);
-        window.history.replaceState(null, '', `#/game/${game.id}`);
+        setSelectedMediaId(null);
+        window.history.replaceState(null, '', window.location.pathname + viewHashPrefix(viewRef.current) + `/game/${game.id}`);
     }, []);
 
     const closeGame = useCallback(() => {
         setSelectedGame(null);
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        setSelectedMediaId(null);
+        window.history.replaceState(null, '', window.location.pathname + viewHashPrefix(viewRef.current));
         fetchGames();
     }, [fetchGames]);
 
     const openGameFromHash = useCallback(() => {
-        const match = window.location.hash.match(/^#\/game\/([^/?#]+)/);
+        const hash = window.location.hash;
+        const completedMatch = hash.match(/^#\/completed\/game\/([^/?#]+)(?:\/media\/([^/?#]+))?/);
+        const boardMatch = !completedMatch && hash.match(/^#\/game\/([^/?#]+)(?:\/media\/([^/?#]+))?/);
+        const match = completedMatch || boardMatch;
         if (!match) return;
         const targetId = decodeURIComponent(match[1]);
+        const mediaId = match[2] ? decodeURIComponent(match[2]) : null;
         const game = games.find(g => String(g.id) === targetId);
-        if (game) setSelectedGame(game);
+        if (game) {
+            if (completedMatch) {
+                setView('completed');
+                viewRef.current = 'completed';
+            }
+            setSelectedGame(game);
+            setSelectedMediaId(mediaId);
+        }
     }, [games]);
 
     // Auto-open game from URL hash once games are available.
@@ -116,13 +146,13 @@ export default function DashboardScreen({ token, currentUser }) {
                 <div className="board-tabs">
                     <button
                         className={`board-tab ${view === 'board' ? 'active' : ''}`}
-                        onClick={() => setView('board')}
+                        onClick={() => handleViewChange('board')}
                     >
                         <Gamepad2 size={16} /> {t('boardView')}
                     </button>
                     <button
                         className={`board-tab ${view === 'completed' ? 'active' : ''}`}
-                        onClick={() => setView('completed')}
+                        onClick={() => handleViewChange('completed')}
                     >
                         <Trophy size={16} /> {t('completedView')}
                     </button>
@@ -200,6 +230,7 @@ export default function DashboardScreen({ token, currentUser }) {
                     currentUser={currentUser}
                     onClose={closeGame}
                     onGameUpdated={handleGameUpdated}
+                    initialMediaId={selectedMediaId}
                     t={t}
                 />
             )}

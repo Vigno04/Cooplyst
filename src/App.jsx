@@ -20,11 +20,12 @@ function decodeToken(token) {
 }
 
 const TOKEN_KEY = 'cooplyst_token';
-const ACTIVE_PAGE_KEY = 'cooplyst_active_page';
 
-function getStoredActivePage() {
-    const stored = localStorage.getItem(ACTIVE_PAGE_KEY);
-    return stored === 'profile' || stored === 'admin' ? stored : null;
+function getActivePageFromHash() {
+    const hash = window.location.hash;
+    if (hash === '#/profile') return 'profile';
+    if (hash === '#/admin') return 'admin';
+    return null;
 }
 
 function App() {
@@ -58,7 +59,7 @@ function App() {
     // UI state
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
     const [notificationsDropdownOpen, setNotificationsDropdownOpen] = useState(false);
-    const [activePage, setActivePage] = useState(() => getStoredActivePage()); // null | 'profile' | 'admin'
+    const [activePage, setActivePage] = useState(() => getActivePageFromHash()); // null | 'profile' | 'admin'
     const [ssoLinkStatus, setSsoLinkStatus] = useState(null); // { type, msg } passed to ProfileScreen
 
     // Notification state
@@ -124,13 +125,23 @@ function App() {
 
     useEffect(() => { fetchConfig(); }, []);
 
+    // Save deep link hash before redirecting to login so we can restore it after auth
     useEffect(() => {
-        if (activePage) {
-            localStorage.setItem(ACTIVE_PAGE_KEY, activePage);
-            return;
+        if (!token && /^#\/(game\/|completed|profile|admin)/.test(window.location.hash)) {
+            sessionStorage.setItem('cooplyst_pending_link', window.location.hash);
         }
-        localStorage.removeItem(ACTIVE_PAGE_KEY);
-    }, [activePage]);
+    }, []); // intentionally run once on mount
+
+    // Read #/profile or #/admin from URL hash once logged in and apply as activePage
+    useEffect(() => {
+        if (!token || !currentUser) return;
+        const hash = window.location.hash;
+        if (hash === '#/profile') {
+            setActivePage('profile');
+        } else if (hash === '#/admin' && currentUser?.role === 'admin') {
+            setActivePage('admin');
+        }
+    }, [token, currentUser]); // runs when auth state is first resolved
 
     // Fetch avatar when logged in
     useEffect(() => {
@@ -191,7 +202,14 @@ function App() {
                 localStorage.setItem(TOKEN_KEY, ssoToken);
                 setToken(ssoToken);
                 setCurrentUser(decodeToken(ssoToken));
-                window.history.replaceState(null, '', window.location.pathname);
+                // Restore any deep link the user was trying to reach before SSO redirect
+                const pendingLink = sessionStorage.getItem('cooplyst_pending_link');
+                if (pendingLink) {
+                    sessionStorage.removeItem('cooplyst_pending_link');
+                    window.history.replaceState(null, '', window.location.pathname + pendingLink);
+                } else {
+                    window.history.replaceState(null, '', window.location.pathname);
+                }
             }
         } else if (hash.includes('sso_error=')) {
             const params = new URLSearchParams(hash.slice(1));
@@ -273,6 +291,12 @@ function App() {
             }
 
             localStorage.setItem(TOKEN_KEY, data.token);
+            // Restore any deep link the user was trying to reach before being redirected to login
+            const pendingLink = sessionStorage.getItem('cooplyst_pending_link');
+            if (pendingLink) {
+                sessionStorage.removeItem('cooplyst_pending_link');
+                window.history.replaceState(null, '', window.location.pathname + pendingLink);
+            }
             setToken(data.token);
             setCurrentUser(decodeToken(data.token));
             // Explicitly clean up all UI state on login
@@ -307,6 +331,7 @@ function App() {
         e?.stopPropagation();
         setActivePage(page);
         setProfileDropdownOpen(false);
+        window.history.replaceState(null, '', window.location.pathname + `#/${page}`);
     };
 
     // ── Render ───────────────────────────────────────────────────────────────
@@ -542,7 +567,7 @@ function App() {
                                 token={token}
                                 ssoLinkStatus={ssoLinkStatus}
                                 ssoEnabled={authentikEnabled}
-                                onClose={() => { setActivePage(null); setSsoLinkStatus(null); }}
+                                onClose={() => { setActivePage(null); setSsoLinkStatus(null); window.history.replaceState(null, '', window.location.pathname); }}
                                 onUserUpdated={(updated) => {
                                     setCurrentUser(prev => ({ ...prev, ...updated }));
                                     if (updated.avatar !== undefined) setUserAvatar(updated.avatar);
@@ -551,7 +576,7 @@ function App() {
                             />
                         )}
                         {activePage === 'admin' && isAdmin && (
-                            <AdminScreen token={token} onClose={() => setActivePage(null)} />
+                            <AdminScreen token={token} onClose={() => { setActivePage(null); window.history.replaceState(null, '', window.location.pathname); }} />
                         )}
                         {!activePage && (
                             <DashboardScreen token={token} currentUser={currentUser} />

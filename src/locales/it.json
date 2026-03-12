@@ -356,5 +356,8 @@
     "gameAlreadyExists": "Questo gioco esiste gi\u00e0 nella tua lista.",
     "gameAlreadyCompleted": "Questo gioco \u00e8 gi\u00e0 nella lista dei completati.",
     "openGameToRepropose": "\u2192 Apri il gioco per riproporre",
-    "openExistingGame": "\u2192 Visualizza gioco"
+    "openExistingGame": "\u2192 Visualizza gioco",
+    "shareGame": "Copia link gioco",
+    "shareImage": "Copia link immagine",
+    "linkCopied": "Copiato!"
 }

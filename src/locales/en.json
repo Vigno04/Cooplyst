@@ -356,5 +356,8 @@
     "gameAlreadyExists": "This game already exists in your list.",
     "gameAlreadyCompleted": "This game is already in your completed list.",
     "openGameToRepropose": "\u2192 Open game to re-propose",
-    "openExistingGame": "\u2192 View game"
+    "openExistingGame": "\u2192 View game",
+    "shareGame": "Copy game link",
+    "shareImage": "Copy image link",
+    "linkCopied": "Copied!"
 }
