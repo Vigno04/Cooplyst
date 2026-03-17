@@ -20,6 +20,10 @@ const registerDownloadRoutes = require('./downloads');
 
 const router = express.Router();
 
+function isTruthy(value) {
+    return value === true || value === 1 || value === '1' || value === 'true';
+}
+
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../../../data');
 const MEDIA_DIR = path.join(DATA_DIR, 'media');
 if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
@@ -138,6 +142,7 @@ router.post('/', async (req, res) => {
         tags,
         website,
     } = req.body;
+    const silentProposal = isTruthy(req.body?.silent);
     if (!title || !title.trim()) {
         return res.status(400).json({ error: 'Title is required' });
     }
@@ -218,15 +223,17 @@ router.post('/', async (req, res) => {
         console.warn('[COOPLYST] Initial metadata refresh failed:', err.message);
     }
 
-    // Fire-and-forget: notify channels that a game was proposed
-    const proposer = db.prepare('SELECT username FROM users WHERE id = ?').get(req.user.id);
-    const siteUrl = getSetting('site_url') || '';
-    notifyGameProposed({
-        id: game.id,
-        title: game.title,
-        cover_url: game.cover_url || game.thumbnail_url || null,
-        proposedByUsername: proposer?.username || 'Someone',
-    }, siteUrl).catch(err => console.warn('[COOPLYST] Notification error:', err.message));
+    if (!silentProposal) {
+        // Fire-and-forget: notify channels that a game was proposed
+        const proposer = db.prepare('SELECT username FROM users WHERE id = ?').get(req.user.id);
+        const siteUrl = getSetting('site_url') || '';
+        notifyGameProposed({
+            id: game.id,
+            title: game.title,
+            cover_url: game.cover_url || game.thumbnail_url || null,
+            proposedByUsername: proposer?.username || 'Someone',
+        }, siteUrl).catch(err => console.warn('[COOPLYST] Notification error:', err.message));
+    }
 
     res.status(201).json(enrichGame(game, req.user.id));
 });
