@@ -1368,6 +1368,10 @@
     flex: 0 0 calc(50% - 0.25rem);
 }
 
+.game-download-btn.third {
+    flex: 0 0 calc(33.333% - 0.33rem);
+}
+
 .game-download-btn:hover {
     background: rgba(74, 144, 226, 0.15);
     border-color: var(--text-blue);
@@ -1449,6 +1453,12 @@
 
 .download-type-badge.magnet img,
 .download-type-badge.torrent img {
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.8));
+}
+
+.download-type-badge.link svg {
+    width: 14px;
+    height: 14px;
     filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.8));
 }
 

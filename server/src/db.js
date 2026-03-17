@@ -262,7 +262,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS game_downloads (
     id          TEXT PRIMARY KEY,
     game_id     TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-    type        TEXT NOT NULL CHECK(type IN ('magnet','torrent')),
+    type        TEXT NOT NULL CHECK(type IN ('magnet','torrent','link')),
     link        TEXT,
     filename    TEXT,
     mime_type   TEXT,
@@ -270,5 +270,35 @@ db.exec(`
     uploaded_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
 `);
+
+// Migrate existing game_downloads table if created with the old type CHECK constraint.
+const downloadsSchema = db
+  .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'game_downloads'")
+  .get();
+
+if (downloadsSchema?.sql && downloadsSchema.sql.includes("type IN ('magnet','torrent')")) {
+  db.exec(`
+    BEGIN TRANSACTION;
+    ALTER TABLE game_downloads RENAME TO game_downloads_old;
+
+    CREATE TABLE game_downloads (
+      id          TEXT PRIMARY KEY,
+      game_id     TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      type        TEXT NOT NULL CHECK(type IN ('magnet','torrent','link')),
+      link        TEXT,
+      filename    TEXT,
+      mime_type   TEXT,
+      uploaded_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      uploaded_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    INSERT INTO game_downloads (id, game_id, type, link, filename, mime_type, uploaded_by, uploaded_at)
+    SELECT id, game_id, type, link, filename, mime_type, uploaded_by, uploaded_at
+    FROM game_downloads_old;
+
+    DROP TABLE game_downloads_old;
+    COMMIT;
+  `);
+}
 
 module.exports = db;

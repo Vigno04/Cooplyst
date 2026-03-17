@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Star, ThumbsUp, ThumbsDown, Gamepad2, Play, CheckCircle, Upload, Trash2, Loader2, Image as ImageIcon, Users, User, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3, Download, Clock, AlertCircle, ChevronLeft, ChevronRight, Link, Check } from 'lucide-react';
+import { X, Star, ThumbsUp, ThumbsDown, Gamepad2, Play, CheckCircle, Upload, Trash2, Loader2, Image as ImageIcon, Users, User, UserPlus, UserMinus, RotateCcw, ExternalLink, Tag, MoreVertical, RefreshCcw, Edit3, Download, Clock, AlertCircle, ChevronLeft, ChevronRight, Link, Check, Link2 } from 'lucide-react';
 import { uploadChunked } from '../uploadWithProgress';
 import magnetIcon from '../assets/magnet-icon.png';
 import torrentIcon from '../assets/download-icon.png';
@@ -743,6 +743,9 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
     const latestDownloads = game.downloads || game.latest_downloads || [];
     const magnetDl = latestDownloads.find(d => d.type === 'magnet');
     const torrentDl = latestDownloads.find(d => d.type === 'torrent');
+    const classicLinkDl = latestDownloads.find(d => d.type === 'link');
+    const downloadButtonsCount = [magnetDl, torrentDl, classicLinkDl].filter(Boolean).length;
+    const downloadButtonClass = downloadButtonsCount === 1 ? 'full' : downloadButtonsCount === 2 ? 'half' : 'third';
 
     return (
         <div className="modal-overlay" onClick={onClose}>
@@ -862,16 +865,21 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                             <ExternalLink size={12} /> {t('officialWebsite')}
                                         </a>
                                     )}
-                                    {(magnetDl || torrentDl) && (
+                                    {(magnetDl || torrentDl || classicLinkDl) && (
                                         <div className="game-card-downloads" style={{ marginTop: '1rem' }} onClick={e => e.stopPropagation()}>
                                             {magnetDl && (
-                                                <a href={magnetDl.link} className={`game-download-btn ${!torrentDl ? 'full' : 'half'}`}>
+                                                <a href={magnetDl.link} className={`game-download-btn ${downloadButtonClass}`}>
                                                     <img src={magnetIcon} alt="Magnet" className="game-download-icon" />
                                                 </a>
                                             )}
                                             {torrentDl && (
-                                                <a href={`/api/media/${torrentDl.filename}`} className={`game-download-btn ${!magnetDl ? 'full' : 'half'}`} download>
+                                                <a href={`/api/media/${torrentDl.filename}`} className={`game-download-btn ${downloadButtonClass}`} download>
                                                     <img src={torrentIcon} alt="Torrent" className="game-download-icon" />
+                                                </a>
+                                            )}
+                                            {classicLinkDl && (
+                                                <a href={classicLinkDl.link} className={`game-download-btn ${downloadButtonClass}`} target="_blank" rel="noopener noreferrer">
+                                                    <Link2 size={16} className="game-download-icon" aria-label={t('classicLinkType') || 'Classic link'} />
                                                 </a>
                                             )}
                                         </div>

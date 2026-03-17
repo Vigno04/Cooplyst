@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Loader2, Upload, Trash2, Download } from 'lucide-react';
+import { X, Loader2, Upload, Trash2, Download, Link2 } from 'lucide-react';
 import magnetIcon from '../assets/magnet-icon.png';
 import torrentIcon from '../assets/download-icon.png';
 import CustomSelect from './CustomSelect';
@@ -13,12 +13,32 @@ export default function ManageDownloadsModal({ gameId, token, currentUser, onClo
     const [link, setLink] = useState('');
     const [file, setFile] = useState(null);
 
+    const parseJsonSafe = async (res) => {
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            return res.json();
+        }
+        const text = await res.text();
+        return { error: text || null };
+    };
+
+    const getDownloadHref = (download) => {
+        if (download.type === 'torrent') return `/api/media/${download.filename}`;
+        return download.link;
+    };
+
+    const getDownloadTypeLabel = (downloadType) => {
+        if (downloadType === 'magnet') return t('magnetType') || 'MAGNET';
+        if (downloadType === 'torrent') return t('torrentType') || 'TORRENT';
+        return t('classicLinkType') || 'CLASSIC LINK';
+    };
+
     const fetchDownloads = useCallback(() => {
         setLoading(true);
         fetch(`/api/games/${gameId}/downloads`, {
             headers: { 'Authorization': `Bearer ${token}` }
         })
-            .then(res => res.json())
+            .then(parseJsonSafe)
             .then(data => {
                 if (Array.isArray(data)) setDownloads(data);
                 setLoading(false);
@@ -35,15 +55,31 @@ export default function ManageDownloadsModal({ gameId, token, currentUser, onClo
 
     const handleUpload = async (e) => {
         e.preventDefault();
-        if (type === 'magnet' && !link) return setError('Link needed');
+        if ((type === 'magnet' || type === 'link') && !link) return setError('Link needed');
         if (type === 'torrent' && !file) return setError('File needed');
+
+        if (type === 'magnet' && !link.startsWith('magnet:?')) {
+            return setError(t('invalidMagnetLink') || 'Invalid magnet link');
+        }
+
+        if (type === 'link') {
+            try {
+                const parsed = new URL(link);
+                if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                    return setError(t('invalidClassicLink') || 'Invalid classic link. Use http:// or https://');
+                }
+            } catch (_err) {
+                return setError(t('invalidClassicLink') || 'Invalid classic link. Use http:// or https://');
+            }
+        }
+
         setUploading(true);
         setError(null);
 
         try {
             const formData = new FormData();
             formData.append('type', type);
-            if (type === 'magnet') formData.append('link', link);
+            if (type === 'magnet' || type === 'link') formData.append('link', link);
             else formData.append('file', file);
 
             const res = await fetch(`/api/games/${gameId}/downloads`, {
@@ -51,9 +87,9 @@ export default function ManageDownloadsModal({ gameId, token, currentUser, onClo
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: formData
             });
-            const data = await res.json();
+            const data = await parseJsonSafe(res);
             if (!res.ok) {
-                throw new Error(data.error || 'Upload failed');
+                throw new Error(data?.error || t('networkError') || 'Upload failed');
             }
             onDownloadsUpdated(data);
             setType('magnet');
@@ -76,12 +112,12 @@ export default function ManageDownloadsModal({ gameId, token, currentUser, onClo
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
-                const data = await res.json();
+                const data = await parseJsonSafe(res);
                 onDownloadsUpdated(data);
                 fetchDownloads();
             } else {
-                const errData = await res.json();
-                setError(errData.error || 'Failed to delete download');
+                const errData = await parseJsonSafe(res);
+                setError(errData?.error || 'Failed to delete download');
                 setLoading(false);
             }
         } catch (err) {
@@ -106,19 +142,28 @@ export default function ManageDownloadsModal({ gameId, token, currentUser, onClo
                             onChange={val => setType(val)}
                             options={[
                                 { value: 'magnet', label: t('magnetType') || 'Magnet Link' },
-                                { value: 'torrent', label: t('torrentType') || 'Torrent File' }
+                                { value: 'torrent', label: t('torrentType') || 'Torrent File' },
+                                { value: 'link', label: t('classicLinkType') || 'Classic Link' }
                             ]}
                         />
                     </div>
-                    {type === 'magnet' ? (
-                        <div className="admin-setting-row--text">
-                            <label className="admin-setting-label">{t('magnetType') || 'Magnet Link'}</label>
-                            <input type="text" className="admin-text-input" value={link} onChange={e => setLink(e.target.value)} placeholder="magnet:?xt=urn:btih:..." />
-                        </div>
-                    ) : (
+                    {type === 'torrent' ? (
                         <div className="admin-setting-row--text">
                             <label className="admin-setting-label">{t('torrentType') || 'Torrent File'}</label>
                             <input type="file" className="admin-text-input" style={{ padding: '0.4rem' }} accept=".torrent" onChange={e => setFile(e.target.files[0])} />
+                        </div>
+                    ) : (
+                        <div className="admin-setting-row--text">
+                            <label className="admin-setting-label">
+                                {type === 'magnet' ? (t('magnetType') || 'Magnet Link') : (t('classicLinkType') || 'Classic Link')}
+                            </label>
+                            <input
+                                type="text"
+                                className="admin-text-input"
+                                value={link}
+                                onChange={e => setLink(e.target.value)}
+                                placeholder={type === 'magnet' ? 'magnet:?xt=urn:btih:...' : 'https://example.com/download'}
+                            />
                         </div>
                     )}
                     {error && <div className="auth-error">{error}</div>}
@@ -142,15 +187,17 @@ export default function ManageDownloadsModal({ gameId, token, currentUser, onClo
                                 <li key={d.id} className="download-item">
                                     <div className="download-info">
                                         <span className={`download-type-badge ${d.type}`}>
-                                            {d.type === 'magnet' ? <img src={magnetIcon} alt="magnet" width={14} height={14} /> : <img src={torrentIcon} alt="torrent" width={14} height={14} />}
-                                            {d.type === 'magnet' ? (t('magnetType') || 'MAGNET') : (t('torrentType') || 'TORRENT')}
+                                            {d.type === 'magnet' && <img src={magnetIcon} alt="magnet" width={14} height={14} />}
+                                            {d.type === 'torrent' && <img src={torrentIcon} alt="torrent" width={14} height={14} />}
+                                            {d.type === 'link' && <Link2 size={14} aria-hidden="true" />}
+                                            {getDownloadTypeLabel(d.type)}
                                         </span>
                                         <div className="download-meta">
                                             {t('uploadedBy') || 'Uploaded by'} {d.uploaded_by_username} · {new Date(d.uploaded_at * 1000).toLocaleDateString()}
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                                        <a href={d.type === 'magnet' ? d.link : `/api/media/${d.filename}`} className="btn btn-secondary btn-sm" download={d.type === 'torrent'}>
+                                        <a href={getDownloadHref(d)} className="btn btn-secondary btn-sm" download={d.type === 'torrent'} target={d.type === 'link' ? '_blank' : undefined} rel={d.type === 'link' ? 'noopener noreferrer' : undefined}>
                                             <Download size={14} /> {t('downloadDownload') || 'Download'}
                                         </a>
                                         {(currentUser?.role === 'admin' || currentUser?.id === d.uploaded_by) && (
