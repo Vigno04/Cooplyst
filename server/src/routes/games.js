@@ -124,6 +124,10 @@ function parseJsonSafe(value, fallback) {
     }
 }
 
+function isTruthy(value) {
+    return value === true || value === 1 || value === '1' || value === 'true';
+}
+
 function hydrateGame(game) {
     return {
         ...game,
@@ -395,6 +399,7 @@ router.post('/', async (req, res) => {
         tags,
         website,
     } = req.body;
+    const silentProposal = isTruthy(req.body?.silent);
     if (!title || !title.trim()) {
         return res.status(400).json({ error: 'Title is required' });
     }
@@ -472,15 +477,17 @@ router.post('/', async (req, res) => {
         console.warn('[COOPLYST] Initial metadata refresh failed:', err.message);
     }
 
-    // Fire-and-forget: notify channels that a game was proposed
-    const proposer = db.prepare('SELECT username FROM users WHERE id = ?').get(req.user.id);
-    const siteUrl = getSetting('site_url') || '';
-    notifyGameProposed({
-        id: game.id,
-        title: game.title,
-        cover_url: game.cover_url || game.thumbnail_url || null,
-        proposedByUsername: proposer?.username || 'Someone',
-    }, siteUrl).catch(err => console.warn('[COOPLYST] Notification error:', err.message));
+    if (!silentProposal) {
+        // Fire-and-forget: notify channels that a game was proposed
+        const proposer = db.prepare('SELECT username FROM users WHERE id = ?').get(req.user.id);
+        const siteUrl = getSetting('site_url') || '';
+        notifyGameProposed({
+            id: game.id,
+            title: game.title,
+            cover_url: game.cover_url || game.thumbnail_url || null,
+            proposedByUsername: proposer?.username || 'Someone',
+        }, siteUrl).catch(err => console.warn('[COOPLYST] Notification error:', err.message));
+    }
 
     res.status(201).json(getFullGame(game.id, req.user.id));
 });

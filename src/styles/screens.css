@@ -1577,6 +1577,21 @@
     color: var(--text-red);
 }
 
+.modal-header-actions {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 40;
+    display: flex;
+    gap: 0.45rem;
+}
+
+.modal-header-actions .modal-close {
+    position: static;
+    top: auto;
+    right: auto;
+}
+
 .modal-loading {
     display: flex;
     justify-content: center;
@@ -1642,6 +1657,26 @@
 
 .propose-search-bar input::placeholder {
     color: rgba(255, 255, 255, 0.25);
+}
+
+.propose-notify-toggle-header {
+    color: var(--text-blue);
+    position: relative;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.propose-notify-toggle-header:hover {
+    border-color: var(--text-blue);
+    color: var(--text-blue);
+}
+
+.propose-notify-toggle-header.is-enabled {
+    color: var(--text-blue);
+}
+
+.propose-notify-toggle-header.is-disabled {
+    color: rgba(255, 255, 255, 0.65);
+    border-color: rgba(226, 74, 74, 0.65);
 }
 
 .propose-loading {
