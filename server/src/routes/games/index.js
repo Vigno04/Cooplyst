@@ -151,7 +151,8 @@ router.post('/', async (req, res) => {
 
     const reproposeExistingGame = (existingId) => {
         db.prepare('DELETE FROM votes WHERE game_id = ?').run(existingId);
-        db.prepare(`UPDATE games SET status = 'proposed', status_changed_at = unixepoch() WHERE id = ?`).run(existingId);
+        db.prepare(`INSERT INTO votes (game_id, user_id, vote, voted_at) VALUES (?, ?, 1, unixepoch())`).run(existingId, req.user.id);
+        db.prepare(`UPDATE games SET status = 'voting', status_changed_at = unixepoch() WHERE id = ?`).run(existingId);
         const existing = db.prepare('SELECT * FROM games WHERE id = ?').get(existingId);
         return res.status(200).json(enrichGame(existing, req.user.id));
     };
@@ -213,6 +214,22 @@ router.post('/', async (req, res) => {
         website || null,
         req.user.id
     );
+
+    // Auto-vote yes for the proposer
+    db.prepare(
+        `INSERT OR IGNORE INTO votes (game_id, user_id, vote, voted_at) VALUES (?, ?, 1, unixepoch())`
+    ).run(id, req.user.id);
+
+    // Initial vote moves it to 'voting' (or 'backlog' if threshold met)
+    const threshold = parseInt(getSetting('vote_threshold') || '3', 10);
+    if (threshold <= 1) {
+        db.prepare(`UPDATE games SET status = 'backlog', status_changed_at = unixepoch() WHERE id = ?`).run(id);
+        const newRunId = uuidv4();
+        db.prepare('INSERT INTO game_runs (id, game_id, run_number) VALUES (?, ?, 1)').run(newRunId, id);
+        db.prepare('INSERT OR IGNORE INTO run_players (run_id, user_id) VALUES (?, ?)').run(newRunId, req.user.id);
+    } else {
+        db.prepare(`UPDATE games SET status = 'voting', status_changed_at = unixepoch() WHERE id = ?`).run(id);
+    }
 
     let game = db.prepare('SELECT * FROM games WHERE id = ?').get(id);
 

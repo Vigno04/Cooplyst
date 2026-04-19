@@ -301,4 +301,10 @@ if (downloadsSchema?.sql && downloadsSchema.sql.includes("type IN ('magnet','tor
   `);
 }
 
+// Migration: ensure proposers have a 'yes' vote for their games
+db.exec(`
+  INSERT OR IGNORE INTO votes (game_id, user_id, vote, voted_at)
+  SELECT id, proposed_by, 1, proposed_at FROM games
+`);
+
 module.exports = db;
