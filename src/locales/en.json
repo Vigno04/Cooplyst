@@ -176,6 +176,7 @@
     "emptyBacklog": "Backlog is empty",
     "emptyPlaying": "Nothing playing right now",
     "noCompleted": "No completed games yet",
+    "columnCompleted": "COMPLETED GAMES",
     "medianRating": "Median rating",
     "votingSection": "VOTING",
     "voteYes": "YES",

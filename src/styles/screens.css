@@ -1900,24 +1900,6 @@
     letter-spacing: 0.5px;
 }
 
-.detail-terminate-btn {
-    color: var(--text-red) !important;
-    border-color: rgba(226, 74, 74, 0.5) !important;
-    background: rgba(226, 74, 74, 0.1) !important;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-}
-
-.detail-terminate-btn:hover {
-    background: rgba(226, 74, 74, 0.2) !important;
-    border-color: var(--text-red) !important;
-    box-shadow: 0 0 10px rgba(226, 74, 74, 0.3);
-}
-
-
 .detail-year {
     font-size: 0.65rem;
     color: rgba(255, 255, 255, 0.6);

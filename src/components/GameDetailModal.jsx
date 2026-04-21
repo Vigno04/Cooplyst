@@ -839,24 +839,6 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                     <h2 className="detail-title">{game.title}</h2>
                                     <div className="detail-meta-pills">
                                         <StatusBadge status={game.status} t={t} />
-                                        {isAdmin && game.status === 'playing' && (
-                                            <button
-                                                className="detail-pill detail-terminate-btn"
-                                                onClick={() => {
-                                                    const activeRun = (game.runs || []).find(r => !r.completed_at);
-                                                    if (activeRun) {
-                                                        if (window.confirm(`${t('terminateGame')}?`)) {
-                                                            completeRun(activeRun.id);
-                                                        }
-                                                    } else {
-                                                        changeStatus('completed');
-                                                    }
-                                                }}
-                                                title={t('terminateGame')}
-                                            >
-                                                <CheckCircle size={12} /> {t('terminateAction')}
-                                            </button>
-                                        )}
                                         {game.release_year && <span className="detail-pill detail-year">{game.release_year}</span>}
                                         {game.rating != null && (
                                             <span className="detail-pill detail-rating">
@@ -1006,21 +988,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                 {run.completed_at ? (
                                                     <span className="run-status run-done"><CheckCircle size={14} /> {t('completed')}</span>
                                                 ) : (
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                        <span className="run-status run-active"><Play size={14} /> {t('inProgress')}</span>
-                                                        {isAdmin && (
-                                                            <button
-                                                                className="run-complete-inline-btn"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    completeRun(run.id);
-                                                                }}
-                                                                title={t('completeRun')}
-                                                            >
-                                                                <CheckCircle size={12} /> {t('completeRun')}
-                                                            </button>
-                                                        )}
-                                                    </div>
+                                                    <span className="run-status run-active"><Play size={14} /> {t('inProgress')}</span>
                                                 )}
                                             </div>
                                             {/* Run players */}
@@ -1180,6 +1148,20 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                                             </button>
                                                         )}
                                                     </div>
+                                                </div>
+                                            )}
+                                            {!run.completed_at && isAdmin && (
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.75rem' }}>
+                                                    <button
+                                                        className="run-complete-inline-btn"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            completeRun(run.id);
+                                                        }}
+                                                        title={t('completeRun')}
+                                                    >
+                                                        <CheckCircle size={14} /> {t('completeRun')}
+                                                    </button>
                                                 </div>
                                             )}
                                         </div>
