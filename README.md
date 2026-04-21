@@ -20,6 +20,30 @@ Cooplyst is a self-hosted platform built for gaming groups. Propose games, vote 
 - **SSO support** — optional Authentik OIDC integration alongside local auth
 - **i18n** — English and Italian included out of the box
 
+## Images
+<div align="center">
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="https://github.com/Vigno04/Cooplyst/blob/develop/readme-images/main-page.png?raw=true" height="250">
+    </td>
+    <td align="center">
+      <img src="https://github.com/Vigno04/Cooplyst/blob/develop/readme-images/automatic-search.png?raw=true" height="250">
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://github.com/Vigno04/Cooplyst/blob/develop/readme-images/game-modal.png?raw=true" height="250">
+    </td>
+    <td align="center">
+      <img src="https://github.com/Vigno04/Cooplyst/blob/develop/readme-images/played-game-view.png?raw=true" height="250">
+    </td>
+  </tr>
+</table>
+
+</div>
+
 ## Getting Started
 
 The easiest way to run Cooplyst locally is with Docker Compose.
