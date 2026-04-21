@@ -124,6 +124,10 @@ function parseJsonSafe(value, fallback) {
     }
 }
 
+function isTruthy(value) {
+    return value === true || value === 1 || value === '1' || value === 'true';
+}
+
 function hydrateGame(game) {
     return {
         ...game,
@@ -395,6 +399,7 @@ router.post('/', async (req, res) => {
         tags,
         website,
     } = req.body;
+    const silentProposal = isTruthy(req.body?.silent);
     if (!title || !title.trim()) {
         return res.status(400).json({ error: 'Title is required' });
     }
@@ -407,7 +412,8 @@ router.post('/', async (req, res) => {
     if (duplicateByTitle) {
         if (duplicateByTitle.status === 'completed') {
             db.prepare('DELETE FROM votes WHERE game_id = ?').run(duplicateByTitle.id);
-            db.prepare(`UPDATE games SET status = 'proposed', status_changed_at = unixepoch() WHERE id = ?`).run(duplicateByTitle.id);
+            db.prepare(`INSERT INTO votes (game_id, user_id, vote, voted_at) VALUES (?, ?, 1, unixepoch())`).run(duplicateByTitle.id, req.user.id);
+            db.prepare(`UPDATE games SET status = 'voting', status_changed_at = unixepoch() WHERE id = ?`).run(duplicateByTitle.id);
             return res.status(200).json(getFullGame(duplicateByTitle.id, req.user.id));
         }
         return res.status(409).json({ error: 'Game already exists' });
@@ -420,7 +426,8 @@ router.post('/', async (req, res) => {
         if (duplicateByApi) {
             if (duplicateByApi.status === 'completed') {
                 db.prepare('DELETE FROM votes WHERE game_id = ?').run(duplicateByApi.id);
-                db.prepare(`UPDATE games SET status = 'proposed', status_changed_at = unixepoch() WHERE id = ?`).run(duplicateByApi.id);
+                db.prepare(`INSERT INTO votes (game_id, user_id, vote, voted_at) VALUES (?, ?, 1, unixepoch())`).run(duplicateByApi.id, req.user.id);
+                db.prepare(`UPDATE games SET status = 'voting', status_changed_at = unixepoch() WHERE id = ?`).run(duplicateByApi.id);
                 return res.status(200).json(getFullGame(duplicateByApi.id, req.user.id));
             }
             return res.status(409).json({ error: 'Game already exists' });
@@ -463,6 +470,22 @@ router.post('/', async (req, res) => {
         req.user.id
     );
 
+    // Auto-vote yes for the proposer
+    db.prepare(
+        `INSERT OR IGNORE INTO votes (game_id, user_id, vote, voted_at) VALUES (?, ?, 1, unixepoch())`
+    ).run(id, req.user.id);
+
+    // Initial vote moves it to 'voting' (or 'backlog' if threshold met)
+    const threshold = parseInt(getSetting('vote_threshold') || '3', 10);
+    if (threshold <= 1) {
+        db.prepare(`UPDATE games SET status = 'backlog', status_changed_at = unixepoch() WHERE id = ?`).run(id);
+        const runId = uuidv4();
+        db.prepare('INSERT INTO game_runs (id, game_id, run_number, name) VALUES (?, ?, 1, ?)').run(runId, id, 'Run #1');
+        db.prepare('INSERT OR IGNORE INTO run_players (run_id, user_id) VALUES (?, ?)').run(runId, req.user.id);
+    } else {
+        db.prepare(`UPDATE games SET status = 'voting', status_changed_at = unixepoch() WHERE id = ?`).run(id);
+    }
+
     let game = db.prepare('SELECT * FROM games WHERE id = ?').get(id);
 
     try {
@@ -472,15 +495,17 @@ router.post('/', async (req, res) => {
         console.warn('[COOPLYST] Initial metadata refresh failed:', err.message);
     }
 
-    // Fire-and-forget: notify channels that a game was proposed
-    const proposer = db.prepare('SELECT username FROM users WHERE id = ?').get(req.user.id);
-    const siteUrl = getSetting('site_url') || '';
-    notifyGameProposed({
-        id: game.id,
-        title: game.title,
-        cover_url: game.cover_url || game.thumbnail_url || null,
-        proposedByUsername: proposer?.username || 'Someone',
-    }, siteUrl).catch(err => console.warn('[COOPLYST] Notification error:', err.message));
+    if (!silentProposal) {
+        // Fire-and-forget: notify channels that a game was proposed
+        const proposer = db.prepare('SELECT username FROM users WHERE id = ?').get(req.user.id);
+        const siteUrl = getSetting('site_url') || '';
+        notifyGameProposed({
+            id: game.id,
+            title: game.title,
+            cover_url: game.cover_url || game.thumbnail_url || null,
+            proposedByUsername: proposer?.username || 'Someone',
+        }, siteUrl).catch(err => console.warn('[COOPLYST] Notification error:', err.message));
+    }
 
     res.status(201).json(getFullGame(game.id, req.user.id));
 });
@@ -580,11 +605,16 @@ router.post('/:id/vote', (req, res) => {
         return res.status(400).json({ error: 'Vote must be 0 (no) or 1 (yes)' });
     }
 
-    // Upsert vote
-    db.prepare(
-        `INSERT INTO votes (game_id, user_id, vote) VALUES (?, ?, ?)
-         ON CONFLICT(game_id, user_id) DO UPDATE SET vote = excluded.vote, voted_at = unixepoch()`
-    ).run(game.id, req.user.id, vote);
+    // Toggle vote or swap: if clicking the same vote value, remove it.
+    const existing = db.prepare('SELECT vote FROM votes WHERE game_id = ? AND user_id = ?').get(game.id, req.user.id);
+    if (existing && existing.vote === vote) {
+        db.prepare('DELETE FROM votes WHERE game_id = ? AND user_id = ?').run(game.id, req.user.id);
+    } else {
+        db.prepare(
+            `INSERT INTO votes (game_id, user_id, vote) VALUES (?, ?, ?)
+             ON CONFLICT(game_id, user_id) DO UPDATE SET vote = excluded.vote, voted_at = unixepoch()`
+        ).run(game.id, req.user.id, vote);
+    }
 
     // If game was 'proposed', move to 'voting' now that the first vote is in
     if (game.status === 'proposed') {

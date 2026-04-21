@@ -30,10 +30,13 @@ module.exports = function registerDownloadRoutes(router) {
         res.json(downloads);
     });
 
-    // ── POST /api/games/:id/downloads — Add torrent/magnet ───────────────────
+    // ── POST /api/games/:id/downloads — Add torrent/magnet/link ──────────────
     router.post('/:id/downloads', (req, res, next) => {
         downloadsUpload.single('file')(req, res, (err) => {
-            if (err) return res.status(400).json({ error: 'File upload failed' });
+            if (err) {
+                const message = err.message || 'File upload failed';
+                return res.status(400).json({ error: message });
+            }
             next();
         });
     }, (req, res) => {
@@ -46,14 +49,24 @@ module.exports = function registerDownloadRoutes(router) {
         }
 
         const { type, link } = req.body;
-        if (type !== 'magnet' && type !== 'torrent') {
-            return res.status(400).json({ error: 'Type must be magnet or torrent' });
+        if (type !== 'magnet' && type !== 'torrent' && type !== 'link') {
+            return res.status(400).json({ error: 'Type must be magnet, torrent or link' });
         }
 
         const id = uuidv4();
         if (type === 'magnet') {
             if (!link || !link.startsWith('magnet:?')) {
                 return res.status(400).json({ error: 'Invalid magnet link' });
+            }
+            db.prepare(`INSERT INTO game_downloads (id, game_id, type, link, uploaded_by) VALUES (?, ?, ?, ?, ?)`).run(id, game.id, type, link, req.user.id);
+        } else if (type === 'link') {
+            try {
+                const parsed = new URL(link);
+                if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                    return res.status(400).json({ error: 'Invalid download link' });
+                }
+            } catch (_err) {
+                return res.status(400).json({ error: 'Invalid download link' });
             }
             db.prepare(`INSERT INTO game_downloads (id, game_id, type, link, uploaded_by) VALUES (?, ?, ?, ?, ?)`).run(id, game.id, type, link, req.user.id);
         } else {

@@ -328,6 +328,7 @@ export default function CompletedView({ completedGames, openGame, t }) {
             )}
 
             <div className="completed-list-controls">
+                <h3 className="completed-list-title">{t('columnCompleted')}</h3>
                 <div className="completed-sort-box">
                     <ArrowUpDown size={14} className="completed-sort-icon" />
                     <CustomSelect

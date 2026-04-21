@@ -72,7 +72,6 @@ jobs:
 
             1. Create a `.env` file:
                ```
-               GHCR_OWNER=${{ github.repository_owner }}
                JWT_SECRET=<strong-random-secret>
                ```
             2. Pull and run:

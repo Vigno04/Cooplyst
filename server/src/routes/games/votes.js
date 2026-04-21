@@ -18,11 +18,16 @@ module.exports = function registerVoteRoutes(router) {
             return res.status(400).json({ error: 'Vote must be 0 (no) or 1 (yes)' });
         }
 
-        // Upsert vote
-        db.prepare(
-            `INSERT INTO votes (game_id, user_id, vote) VALUES (?, ?, ?)
-             ON CONFLICT(game_id, user_id) DO UPDATE SET vote = excluded.vote, voted_at = unixepoch()`
-        ).run(game.id, req.user.id, vote);
+        // Toggle vote or swap: if clicking the same vote value, remove it.
+        const existing = db.prepare('SELECT vote FROM votes WHERE game_id = ? AND user_id = ?').get(game.id, req.user.id);
+        if (existing && existing.vote === vote) {
+            db.prepare('DELETE FROM votes WHERE game_id = ? AND user_id = ?').run(game.id, req.user.id);
+        } else {
+            db.prepare(
+                `INSERT INTO votes (game_id, user_id, vote) VALUES (?, ?, ?)
+                 ON CONFLICT(game_id, user_id) DO UPDATE SET vote = excluded.vote, voted_at = unixepoch()`
+            ).run(game.id, req.user.id, vote);
+        }
 
         // If game was 'proposed', move to 'voting' now that the first vote is in
         if (game.status === 'proposed') {
@@ -101,9 +106,10 @@ module.exports = function registerVoteRoutes(router) {
         const game = db.prepare('SELECT * FROM games WHERE id = ?').get(req.params.id);
         if (!game) return res.status(404).json({ error: 'Game not found' });
 
-        // Clear all votes and reset status to proposed
+        // Clear all votes, add proposer vote, and reset status to voting
         db.prepare('DELETE FROM votes WHERE game_id = ?').run(game.id);
-        db.prepare(`UPDATE games SET status = 'proposed', status_changed_at = unixepoch() WHERE id = ?`).run(game.id);
+        db.prepare(`INSERT INTO votes (game_id, user_id, vote, voted_at) VALUES (?, ?, 1, unixepoch())`).run(game.id, req.user.id);
+        db.prepare(`UPDATE games SET status = 'voting', status_changed_at = unixepoch() WHERE id = ?`).run(game.id);
 
         const updated = db.prepare('SELECT * FROM games WHERE id = ?').get(game.id);
         res.json(enrichGame(updated, req.user.id));

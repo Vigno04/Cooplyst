@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, X, Loader2, Gamepad2 } from 'lucide-react';
+import { Search, X, Loader2, Gamepad2, Bell, BellOff } from 'lucide-react';
 
 export default function ProposeGameModal({ token, onClose, onProposed, onOpenGame, t }) {
     const [query, setQuery] = useState('');
@@ -7,6 +7,7 @@ export default function ProposeGameModal({ token, onClose, onProposed, onOpenGam
     const [searching, setSearching] = useState(false);
     const [manualMode, setManualMode] = useState(false);
     const [manualTitle, setManualTitle] = useState('');
+    const [silentProposal, setSilentProposal] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [conflictGame, setConflictGame] = useState(null); // { id, status }
@@ -42,7 +43,7 @@ export default function ProposeGameModal({ token, onClose, onProposed, onOpenGam
             const res = await fetch('/api/games', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(gameData),
+                body: JSON.stringify({ ...gameData, silent: silentProposal }),
             });
             if (!res.ok) {
                 const data = await res.json();
@@ -71,7 +72,22 @@ export default function ProposeGameModal({ token, onClose, onProposed, onOpenGam
             <div className="modal-content modal-propose" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <h2>{t('proposeGame')}</h2>
-                    <button className="modal-close" onClick={onClose}><X size={20} /></button>
+                    <div className="modal-header-actions">
+                        <button
+                            type="button"
+                            className={`modal-close propose-notify-toggle-header ${silentProposal ? 'is-disabled' : 'is-enabled'}`}
+                            onClick={() => setSilentProposal(v => !v)}
+                            title={silentProposal
+                                ? (t('proposeSilentHoverDisabled') || 'Notifications are disabled for this proposal')
+                                : (t('proposeSilentHoverEnabled') || 'Notifications are enabled for this proposal')}
+                            aria-label={silentProposal
+                                ? (t('proposeSilentHoverDisabled') || 'Notifications are disabled for this proposal')
+                                : (t('proposeSilentHoverEnabled') || 'Notifications are enabled for this proposal')}
+                        >
+                            {silentProposal ? <BellOff size={20} /> : <Bell size={20} />}
+                        </button>
+                        <button className="modal-close" onClick={onClose}><X size={20} /></button>
+                    </div>
                 </div>
 
                 <div className="propose-search-bar">

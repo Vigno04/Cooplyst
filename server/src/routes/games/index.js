@@ -20,6 +20,10 @@ const registerDownloadRoutes = require('./downloads');
 
 const router = express.Router();
 
+function isTruthy(value) {
+    return value === true || value === 1 || value === '1' || value === 'true';
+}
+
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../../../data');
 const MEDIA_DIR = path.join(DATA_DIR, 'media');
 if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
@@ -138,6 +142,7 @@ router.post('/', async (req, res) => {
         tags,
         website,
     } = req.body;
+    const silentProposal = isTruthy(req.body?.silent);
     if (!title || !title.trim()) {
         return res.status(400).json({ error: 'Title is required' });
     }
@@ -146,7 +151,8 @@ router.post('/', async (req, res) => {
 
     const reproposeExistingGame = (existingId) => {
         db.prepare('DELETE FROM votes WHERE game_id = ?').run(existingId);
-        db.prepare(`UPDATE games SET status = 'proposed', status_changed_at = unixepoch() WHERE id = ?`).run(existingId);
+        db.prepare(`INSERT INTO votes (game_id, user_id, vote, voted_at) VALUES (?, ?, 1, unixepoch())`).run(existingId, req.user.id);
+        db.prepare(`UPDATE games SET status = 'voting', status_changed_at = unixepoch() WHERE id = ?`).run(existingId);
         const existing = db.prepare('SELECT * FROM games WHERE id = ?').get(existingId);
         return res.status(200).json(enrichGame(existing, req.user.id));
     };
@@ -209,6 +215,20 @@ router.post('/', async (req, res) => {
         req.user.id
     );
 
+    // Auto-vote yes for the proposer
+    db.prepare(
+        `INSERT OR IGNORE INTO votes (game_id, user_id, vote, voted_at) VALUES (?, ?, 1, unixepoch())`
+    ).run(id, req.user.id);
+
+    // Initial vote moves it to 'voting' (or 'backlog' if threshold met)
+    const threshold = parseInt(getSetting('vote_threshold') || '3', 10);
+    if (threshold <= 1) {
+        db.prepare(`UPDATE games SET status = 'backlog', status_changed_at = unixepoch() WHERE id = ?`).run(id);
+        populatePlayersFromVotes(id);
+    } else {
+        db.prepare(`UPDATE games SET status = 'voting', status_changed_at = unixepoch() WHERE id = ?`).run(id);
+    }
+
     let game = db.prepare('SELECT * FROM games WHERE id = ?').get(id);
 
     try {
@@ -218,15 +238,17 @@ router.post('/', async (req, res) => {
         console.warn('[COOPLYST] Initial metadata refresh failed:', err.message);
     }
 
-    // Fire-and-forget: notify channels that a game was proposed
-    const proposer = db.prepare('SELECT username FROM users WHERE id = ?').get(req.user.id);
-    const siteUrl = getSetting('site_url') || '';
-    notifyGameProposed({
-        id: game.id,
-        title: game.title,
-        cover_url: game.cover_url || game.thumbnail_url || null,
-        proposedByUsername: proposer?.username || 'Someone',
-    }, siteUrl).catch(err => console.warn('[COOPLYST] Notification error:', err.message));
+    if (!silentProposal) {
+        // Fire-and-forget: notify channels that a game was proposed
+        const proposer = db.prepare('SELECT username FROM users WHERE id = ?').get(req.user.id);
+        const siteUrl = getSetting('site_url') || '';
+        notifyGameProposed({
+            id: game.id,
+            title: game.title,
+            cover_url: game.cover_url || game.thumbnail_url || null,
+            proposedByUsername: proposer?.username || 'Someone',
+        }, siteUrl).catch(err => console.warn('[COOPLYST] Notification error:', err.message));
+    }
 
     res.status(201).json(enrichGame(game, req.user.id));
 });

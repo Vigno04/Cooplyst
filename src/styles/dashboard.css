@@ -576,9 +576,18 @@
 
 .completed-list-controls {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     border-bottom: 2px solid var(--border-color);
     padding-bottom: 0.5rem;
+}
+
+.completed-list-title {
+    margin: 0;
+    font-size: 1rem;
+    font-family: var(--font-retro);
+    color: var(--text-primary);
+    text-transform: uppercase;
 }
 
 .completed-sort-box {
