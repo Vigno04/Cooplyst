@@ -1,5 +1,5 @@
 # Stage 1: Build the React frontend
-FROM node:20-alpine AS frontend-builder
+FROM node:20-bookworm-slim AS frontend-builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
@@ -7,8 +7,8 @@ COPY . .
 RUN npm run build
 
 # Stage 2: Combined image (nginx + Node.js backend)
-FROM node:20-alpine
-RUN apk add --no-cache nginx
+FROM node:20-bookworm-slim
+RUN apt-get update && apt-get install -y nginx && rm -rf /var/lib/apt/lists/*
 
 # Set up backend
 WORKDIR /app
@@ -23,7 +23,9 @@ COPY src/assets ./assets/
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 
 # Copy nginx config
-COPY nginx.conf /etc/nginx/http.d/default.conf
+# On Debian, the default site config is at /etc/nginx/sites-available/default
+COPY nginx.conf /etc/nginx/sites-available/default
+RUN ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 
 # Copy startup script
 COPY start.sh /start.sh
