@@ -1900,6 +1900,24 @@
     letter-spacing: 0.5px;
 }
 
+.detail-terminate-btn {
+    color: var(--text-red) !important;
+    border-color: rgba(226, 74, 74, 0.5) !important;
+    background: rgba(226, 74, 74, 0.1) !important;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.detail-terminate-btn:hover {
+    background: rgba(226, 74, 74, 0.2) !important;
+    border-color: var(--text-red) !important;
+    box-shadow: 0 0 10px rgba(226, 74, 74, 0.3);
+}
+
+
 .detail-year {
     font-size: 0.65rem;
     color: rgba(255, 255, 255, 0.6);
@@ -2253,6 +2271,28 @@
 .run-done {
     color: #c084fc;
 }
+
+.run-complete-inline-btn {
+    background: rgba(80, 227, 194, 0.12);
+    border: 1px solid rgba(80, 227, 194, 0.45);
+    color: var(--text-green);
+    font-family: var(--font-retro);
+    font-size: 0.58rem;
+    padding: 0.2rem 0.45rem;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    transition: all 0.2s;
+}
+
+.run-complete-inline-btn:hover {
+    background: rgba(80, 227, 194, 0.25);
+    border-color: var(--text-green);
+    box-shadow: 0 0 8px rgba(80, 227, 194, 0.3);
+}
+
 
 .run-avg-rating {
     font-size: 0.65rem;

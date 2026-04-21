@@ -365,5 +365,7 @@
     "openExistingGame": "\u2192 Visualizza gioco",
     "shareGame": "Copia link gioco",
     "shareImage": "Copia link immagine",
-    "linkCopied": "Copiato!"
+    "linkCopied": "Copiato!",
+    "terminateGame": "Termina partita corrente",
+    "terminateAction": "Termina"
 }

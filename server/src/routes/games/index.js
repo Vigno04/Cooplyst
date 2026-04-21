@@ -224,9 +224,7 @@ router.post('/', async (req, res) => {
     const threshold = parseInt(getSetting('vote_threshold') || '3', 10);
     if (threshold <= 1) {
         db.prepare(`UPDATE games SET status = 'backlog', status_changed_at = unixepoch() WHERE id = ?`).run(id);
-        const newRunId = uuidv4();
-        db.prepare('INSERT INTO game_runs (id, game_id, run_number) VALUES (?, ?, 1)').run(newRunId, id);
-        db.prepare('INSERT OR IGNORE INTO run_players (run_id, user_id) VALUES (?, ?)').run(newRunId, req.user.id);
+        populatePlayersFromVotes(id);
     } else {
         db.prepare(`UPDATE games SET status = 'voting', status_changed_at = unixepoch() WHERE id = ?`).run(id);
     }
