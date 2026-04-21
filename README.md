@@ -4,7 +4,7 @@
 
   [![Version](https://img.shields.io/github/v/release/vigno04/cooplyst)](https://github.com/vigno04/cooplyst/releases)
   [![License](https://img.shields.io/github/license/vigno04/cooplyst)](LICENSE)
-  [![Last Commit](https://img.shields.io/github/last-commit/vigno04/cooplyst/develop)](https://github.com/vigno04/cooplyst/commits/develop)
+  [![Last Commit](https://img.shields.io/github/last-commit/vigno04/cooplyst/main)](https://github.com/vigno04/cooplyst/commits/main)
 </div>
 
 ## What is Cooplyst?
@@ -26,18 +26,18 @@ Cooplyst is a self-hosted platform built for gaming groups. Propose games, vote 
 <table>
   <tr>
     <td align="center">
-      <img src="https://github.com/Vigno04/Cooplyst/blob/develop/readme-images/main-page.png?raw=true" height="250">
+      <img src="https://github.com/Vigno04/Cooplyst/blob/main/readme-images/main-page.png?raw=true" height="250">
     </td>
     <td align="center">
-      <img src="https://github.com/Vigno04/Cooplyst/blob/develop/readme-images/automatic-search.png?raw=true" height="250">
+      <img src="https://github.com/Vigno04/Cooplyst/blob/main/readme-images/automatic-search.png?raw=true" height="250">
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="https://github.com/Vigno04/Cooplyst/blob/develop/readme-images/game-modal.png?raw=true" height="250">
+      <img src="https://github.com/Vigno04/Cooplyst/blob/main/readme-images/game-modal.png?raw=true" height="250">
     </td>
     <td align="center">
-      <img src="https://github.com/Vigno04/Cooplyst/blob/develop/readme-images/played-game-view.png?raw=true" height="250">
+      <img src="https://github.com/Vigno04/Cooplyst/blob/main/readme-images/played-game-view.png?raw=true" height="250">
     </td>
   </tr>
 </table>
@@ -51,7 +51,7 @@ The easiest way to run Cooplyst locally is with Docker Compose.
 ```yaml
 services:
     cooplyst:
-        image: ghcr.io/vigno04/cooplyst:develop
+        image: ghcr.io/vigno04/cooplyst:main
         env_file:
             - .env
         ports:
