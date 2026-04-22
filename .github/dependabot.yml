@@ -1,0 +1,31 @@
+version: 2
+
+updates:
+  # NPM dependencies (your main project)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    # Optional but recommended
+    open-pull-requests-limit: 5
+
+    # Group all deps (clean PRs)
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+
+    # Labels for PRs
+    labels:
+      - "dependencies"
+
+  # GitHub Actions (very useful, people forget this)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    labels:
+      - "ci"
+      - "dependencies"
