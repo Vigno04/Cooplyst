@@ -1,30 +1,40 @@
 version: 2
 
 updates:
-  # NPM dependencies (your main project)
+  # NPM (your project)
   - package-ecosystem: "npm"
     directory: "/"
+    target-branch: "develop"
+
     schedule:
       interval: "weekly"
 
-    # Optional but recommended
     open-pull-requests-limit: 5
 
-    # Group all deps (clean PRs)
+    # Ignore breaking changes (major versions)
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
     groups:
       npm-dependencies:
         patterns:
           - "*"
 
-    # Labels for PRs
     labels:
       - "dependencies"
 
-  # GitHub Actions (very useful, people forget this)
+  # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "develop"
+
     schedule:
       interval: "weekly"
+
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
     labels:
       - "ci"
