@@ -1725,6 +1725,48 @@
     background: rgba(74, 144, 226, 0.1);
 }
 
+.propose-result--active {
+    background: rgba(0, 0, 0, 0.8);
+    border-color: rgba(255, 255, 255, 0.05);
+    opacity: 0.45;
+    filter: grayscale(100%);
+}
+
+.propose-result--active:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.9);
+    opacity: 0.6;
+}
+
+.propose-result--completed {
+    border-color: rgba(46, 204, 113, 0.4);
+    background: rgba(46, 204, 113, 0.05);
+}
+
+.propose-result--completed:hover {
+    border-color: rgba(46, 204, 113, 0.8);
+    background: rgba(46, 204, 113, 0.15);
+}
+
+.propose-result-status-badge {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    margin-left: 0.5rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.propose-result--active .propose-result-status-badge {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.propose-result--completed .propose-result-status-badge {
+    background: rgba(46, 204, 113, 0.2);
+    color: var(--status-completed, #2ecc71);
+}
+
 .propose-result-cover {
     width: 48px;
     height: 48px;
@@ -1745,6 +1787,7 @@
     flex-direction: column;
     gap: 0.2rem;
     min-width: 0;
+    flex: 1;
 }
 
 .propose-result-info strong {

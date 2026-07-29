@@ -496,9 +496,11 @@ export default function AdminScreen({ token, onClose }) {
                                                                         type="button"
                                                                         className="btn-copy"
                                                                         onClick={() => {
-                                                                            navigator.clipboard.writeText(
-                                                                                `${pending.site_url.replace(/\/$/, '')}/api/auth/oidc/callback`
-                                                                            );
+                                                                            try {
+                                                                                navigator.clipboard.writeText(
+                                                                                    `${pending.site_url.replace(/\/$/, '')}/api/auth/oidc/callback`
+                                                                                ).catch(() => {});
+                                                                            } catch (err) {}
                                                                         }}
                                                                         title={t('adminCopyBtn')}
                                                                     >

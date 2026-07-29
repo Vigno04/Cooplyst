@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Search, X, Loader2, Gamepad2, Bell, BellOff } from 'lucide-react';
+import { Search, X, Loader2, Gamepad2, Bell, BellOff, Eye, Users } from 'lucide-react';
+import GameDetailModal from './GameDetailModal';
 
 export default function ProposeGameModal({ token, onClose, onProposed, onOpenGame, t }) {
     const [query, setQuery] = useState('');
@@ -11,6 +12,16 @@ export default function ProposeGameModal({ token, onClose, onProposed, onOpenGam
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [conflictGame, setConflictGame] = useState(null); // { id, status }
+    const [previewGame, setPreviewGame] = useState(null);
+    const [multiplayerOnly, setMultiplayerOnly] = useState(true);
+
+    const isMultiplayer = (game) => {
+        const keywords = ['multiplayer', 'co-op', 'online co-op', 'online multiplayer', 'split screen', 'local co-op', 'local multiplayer'];
+        const textToSearch = `${game.tags || ''} ${game.genre || ''}`.toLowerCase();
+        return keywords.some(kw => textToSearch.includes(kw));
+    };
+
+    const displayResults = multiplayerOnly ? results.filter(isMultiplayer) : results;
 
     // Debounced search
     useEffect(() => {
@@ -86,6 +97,16 @@ export default function ProposeGameModal({ token, onClose, onProposed, onOpenGam
                         >
                             {silentProposal ? <BellOff size={20} /> : <Bell size={20} />}
                         </button>
+                        <button
+                            className={`modal-close propose-notify-toggle-header ${multiplayerOnly ? 'is-enabled' : 'is-disabled'}`}
+                            onClick={() => setMultiplayerOnly(v => !v)}
+                            title={multiplayerOnly
+                                ? "Showing only multiplayer/co-op games (Click to show all)"
+                                : "Showing all games (Click to filter multiplayer only)"}
+                            aria-label="Toggle multiplayer filter"
+                        >
+                            <Users size={20} style={{ opacity: multiplayerOnly ? 1 : 0.5 }} />
+                        </button>
                         <button className="modal-close" onClick={onClose}><X size={20} /></button>
                     </div>
                 </div>
@@ -125,10 +146,14 @@ export default function ProposeGameModal({ token, onClose, onProposed, onOpenGam
                     <div className="propose-loading"><Loader2 size={24} className="spin" /> {t('searching')}</div>
                 )}
 
-                {!searching && !submitting && results.length > 0 && (
+                {!searching && !submitting && displayResults.length > 0 && (
                     <div className="propose-results">
-                        {results.map((r, i) => (
-                            <div key={`${r.api_id}-${i}`} className="propose-result" onClick={() => propose(r)}>
+                        {displayResults.map((r, i) => (
+                            <div
+                                key={`${r.api_id}-${i}`}
+                                className={`propose-result ${r.local_status ? (r.local_status === 'completed' ? 'propose-result--completed' : 'propose-result--active') : ''}`}
+                                onClick={() => propose(r)}
+                            >
                                 {r.cover_url ? (
                                     <img src={r.cover_url} alt={r.title} className="propose-result-cover" />
                                 ) : (
@@ -137,13 +162,35 @@ export default function ProposeGameModal({ token, onClose, onProposed, onOpenGam
                                     </div>
                                 )}
                                 <div className="propose-result-info">
-                                    <strong>{r.title}</strong>
+                                    <strong>
+                                        {r.title}
+                                        {r.local_status && (
+                                            <span className="propose-result-status-badge">
+                                                {t(r.local_status) || r.local_status}
+                                            </span>
+                                        )}
+                                    </strong>
                                     {r.release_year && <span className="propose-result-year">{r.release_year}</span>}
                                     {r.platforms && <span className="propose-result-platforms">{r.platforms}</span>}
                                 </div>
+                                <button
+                                    className="btn-icon propose-preview-btn"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPreviewGame(r);
+                                    }}
+                                    title={t('previewGame') || 'Preview'}
+                                    aria-label="Preview"
+                                >
+                                    <Eye size={20} />
+                                </button>
                             </div>
                         ))}
                     </div>
+                )}
+
+                {!searching && !submitting && results.length > 0 && displayResults.length === 0 && (
+                    <div className="propose-loading">No multiplayer games found. Try disabling the filter.</div>
                 )}
 
                 {/* Manual entry fallback */}
@@ -174,6 +221,16 @@ export default function ProposeGameModal({ token, onClose, onProposed, onOpenGam
                     </div>
                 )}
             </div>
+            
+            {previewGame && (
+                <GameDetailModal 
+                    game={{...previewGame, status: 'proposed'}} 
+                    isPreview={true} 
+                    onClose={() => setPreviewGame(null)} 
+                    onPropose={(game) => { propose(game); setPreviewGame(null); }}
+                    t={t} 
+                />
+            )}
         </div>
     );
 }

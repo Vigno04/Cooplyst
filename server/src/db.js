@@ -113,6 +113,15 @@ db.exec(`
     mime_type   TEXT NOT NULL,
     uploaded_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
+
+  CREATE INDEX IF NOT EXISTS idx_games_status ON games(status);
+  CREATE INDEX IF NOT EXISTS idx_votes_game_id ON votes(game_id);
+  CREATE INDEX IF NOT EXISTS idx_run_players_run_id ON run_players(run_id);
+  CREATE INDEX IF NOT EXISTS idx_game_players_game_id ON game_players(game_id);
+  CREATE INDEX IF NOT EXISTS idx_game_runs_game_id ON game_runs(game_id);
+  CREATE INDEX IF NOT EXISTS idx_ratings_run_id ON ratings(run_id);
+  CREATE INDEX IF NOT EXISTS idx_media_game_id ON media(game_id);
+  CREATE INDEX IF NOT EXISTS idx_media_run_id ON media(run_id);
 `);
 
 // Migration: add oidc_sub column for existing DBs.
@@ -291,6 +300,8 @@ if (downloadsSchema?.sql && downloadsSchema.sql.includes("type IN ('magnet','tor
       uploaded_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       uploaded_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
+
+    CREATE INDEX IF NOT EXISTS idx_game_downloads_game_id ON game_downloads(game_id);
 
     INSERT INTO game_downloads (id, game_id, type, link, filename, mime_type, uploaded_by, uploaded_at)
     SELECT id, game_id, type, link, filename, mime_type, uploaded_by, uploaded_at

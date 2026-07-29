@@ -7,6 +7,7 @@ import CustomSelect from './CustomSelect';
 import StatusBadge from './StatusBadge';
 import AdminMetadataEditor from './AdminMetadataEditor';
 import ManageDownloadsModal from './ManageDownloadsModal';
+import RefreshSearchModal from './RefreshSearchModal';
 
 function toDateInputValue(value) {
     if (!value) return '';
@@ -64,7 +65,15 @@ function createRatingDraft(score = 0, comment = '') {
 
 function copyToClipboard(text) {
     if (navigator.clipboard?.writeText) {
-        return navigator.clipboard.writeText(text);
+        try {
+            return navigator.clipboard.writeText(text).catch(() => {
+                // If the promise rejects, we can't easily fallback from inside the promise, 
+                // but usually the synchronous throw is the problem in insecure contexts.
+            });
+        } catch (err) {
+            // Synchronous throw (e.g. DOMException: The operation is insecure in Firefox)
+            // Fall through to fallback method
+        }
     }
     try {
         const ta = document.createElement('textarea');
@@ -78,7 +87,7 @@ function copyToClipboard(text) {
     return Promise.resolve();
 }
 
-export default function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGameUpdated, initialMediaId, t }) {
+export default function GameDetailModal({ game: initialGame, token, currentUser, onClose, onGameUpdated, initialMediaId, isPreview = false, onPropose, t }) {
     const [game, setGame] = useState(initialGame);
     const [loading, setLoading] = useState(true);
     const [shareCopied, setShareCopied] = useState(false);
@@ -108,11 +117,16 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
     const [editingMediaDraft, setEditingMediaDraft] = useState(null);
     const [adminUploadUserId, setAdminUploadUserId] = useState(currentUser?.id || '');
     const [adminUploadDate, setAdminUploadDate] = useState(getCurrentDateInputValue());
+    const [refreshSearchOpen, setRefreshSearchOpen] = useState(false);
 
     const isAdmin = currentUser?.role === 'admin';
     const canManageDownloads = isAdmin || window?.COOPLYST_CONFIG?.allow_all_users_add_downloads === true;
 
     const fetchDetail = useCallback(async () => {
+        if (isPreview) {
+            setLoading(false);
+            return;
+        }
         try {
             const res = await fetch(`/api/games/${game.id}`, {
                 headers: { 'Authorization': `Bearer ${token}` },
@@ -493,11 +507,19 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
     };
 
 
-    const refreshMetadata = async () => {
+    const refreshMetadata = async (providerData = null) => {
         try {
+            const bodyPayload = providerData 
+                ? { api_id: providerData.api_id, api_provider: providerData.api_provider }
+                : {};
+                
             const res = await fetch(`/api/games/${game.id}/metadata/refresh`, {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(bodyPayload),
             });
             if (res.ok) {
                 const updated = await res.json();
@@ -748,18 +770,20 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
     const downloadButtonClass = downloadButtonsCount === 1 ? 'full' : downloadButtonsCount === 2 ? 'half' : 'third';
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-overlay" onClick={onClose} style={{ zIndex: isPreview ? 2000 : 1000 }}>
             <div className="modal-content modal-detail" onClick={e => e.stopPropagation()}>
                 <button className="modal-close" onClick={onClose}><X size={20} /></button>
-                <button
-                    className={`detail-share-btn${shareCopied ? ' detail-share-btn--copied' : ''}`}
-                    onClick={handleShareGame}
-                    title={shareCopied ? (t('linkCopied') || 'Copied!') : (t('shareGame') || 'Copy link')}
-                    aria-label={t('shareGame') || 'Copy link'}
-                >
-                    {shareCopied ? <Check size={18} /> : <Link size={18} />}
-                </button>
-                {(isAdmin || canManageDownloads) && (
+                {!isPreview && (
+                    <button
+                        className={`detail-share-btn${shareCopied ? ' detail-share-btn--copied' : ''}`}
+                        onClick={handleShareGame}
+                        title={shareCopied ? (t('linkCopied') || 'Copied!') : (t('shareGame') || 'Copy link')}
+                        aria-label={t('shareGame') || 'Copy link'}
+                    >
+                        {shareCopied ? <Check size={18} /> : <Link size={18} />}
+                    </button>
+                )}
+                {!isPreview && (isAdmin || canManageDownloads) && (
                     <div className="detail-admin-menu-wrap">
                         <button
                             className="detail-admin-menu-trigger"
@@ -787,7 +811,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                         <button onClick={() => { setAdminEditorOpen(true); setAdminMenuOpen(false); }}>
                                             <Edit3 size={14} /> {t('adminMenuEditMetadata')}
                                         </button>
-                                        <button onClick={() => { refreshMetadata(); setAdminMenuOpen(false); }}>
+                                        <button onClick={() => { setRefreshSearchOpen(true); setAdminMenuOpen(false); }}>
                                             <RefreshCcw size={14} /> {t('adminMenuRefreshMetadata')}
                                         </button>
                                         <div className="detail-admin-menu-divider" />
@@ -885,10 +909,22 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                                         </div>
                                     )}
                                 </div>
+                                {isPreview && (
+                                    <div style={{ marginTop: '1.5rem' }}>
+                                        <button
+                                            className="btn btn-primary"
+                                            onClick={() => onPropose && onPropose(game)}
+                                        >
+                                            {t('selectGame') || 'Select'}
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        <div className="detail-body">
+                        {!isPreview && (
+                            <>
+                                {/* Rest of content hidden in preview mode */}                        <div className="detail-body">
                             {game.description && (
                                 <div className="detail-description">
                                     <p>{game.description.length > 600 ? game.description.slice(0, 600) + '…' : game.description}</p>
@@ -1291,6 +1327,8 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                             </div>
 
                         </div>{/* end detail-body */}
+                            </>
+                        )}
                     </>
                 )}
 
@@ -1412,8 +1450,9 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                     </div>
                 )}
 
-                <AdminMetadataEditor
-                    open={adminEditorOpen}
+                {!isPreview && adminEditorOpen && (
+                    <AdminMetadataEditor
+                        open={adminEditorOpen}
                     game={game}
                     token={token}
                     onClose={() => setAdminEditorOpen(false)}
@@ -1421,9 +1460,22 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                         setGame(updated);
                         onGameUpdated(updated);
                     }}
-                    t={t}
-                />
-                {manageRunsOpen && (
+                        t={t}
+                    />
+                )}
+                {!isPreview && refreshSearchOpen && (
+                    <RefreshSearchModal
+                        token={token}
+                        initialQuery={game.title}
+                        onClose={() => setRefreshSearchOpen(false)}
+                        onSelect={(providerData) => {
+                            setRefreshSearchOpen(false);
+                            refreshMetadata(providerData);
+                        }}
+                        t={t}
+                    />
+                )}
+                {!isPreview && manageRunsOpen && (
                     <div className="modal-overlay" onClick={() => { setManageRunsOpen(false); setEditingRunDraft(null); }}>
                         <div className="modal-content modal-detail modal-admin-manage" onClick={e => e.stopPropagation()}>
                             <div className="modal-header">
@@ -1691,7 +1743,7 @@ export default function GameDetailModal({ game: initialGame, token, currentUser,
                         </div>
                     </div>
                 )}
-                {manageDownloadsOpen && (
+                {!isPreview && manageDownloadsOpen && (
                     <ManageDownloadsModal
                         gameId={game.id}
                         token={token}

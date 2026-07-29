@@ -55,6 +55,29 @@ router.get('/search', async (req, res) => {
     const providersJson = getSetting('game_api_providers') || '[]';
     try {
         const { results, provider } = await searchGames(q.trim(), providersJson);
+
+        if (results && results.length > 0) {
+            const apiIds = results.map(r => r.api_id).filter(Boolean);
+            if (apiIds.length > 0) {
+                const placeholders = apiIds.map(() => '?').join(',');
+                const existingGames = db.prepare(`SELECT api_id, api_provider, status FROM games WHERE api_id IN (${placeholders})`).all(...apiIds);
+                
+                const existingMap = new Map();
+                for (const game of existingGames) {
+                    existingMap.set(`${game.api_provider}:${game.api_id}`, game.status);
+                }
+                
+                for (const r of results) {
+                    if (r.api_id && r.api_provider) {
+                        const status = existingMap.get(`${r.api_provider}:${r.api_id}`);
+                        if (status) {
+                            r.local_status = status;
+                        }
+                    }
+                }
+            }
+        }
+
         res.json({ results, provider });
     } catch (err) {
         console.error('[COOPLYST] Game search error:', err.message);
@@ -231,11 +254,13 @@ router.post('/', async (req, res) => {
 
     let game = db.prepare('SELECT * FROM games WHERE id = ?').get(id);
 
-    try {
-        const refreshed = await refreshGameMetadata(game);
-        if (refreshed) game = refreshed;
-    } catch (err) {
-        console.warn('[COOPLYST] Initial metadata refresh failed:', err.message);
+    if (game.api_id) {
+        try {
+            const refreshed = await refreshGameMetadata(game);
+            if (refreshed) game = refreshed;
+        } catch (err) {
+            console.warn('[COOPLYST] Initial metadata refresh failed:', err.message);
+        }
     }
 
     if (!silentProposal) {
@@ -255,8 +280,15 @@ router.post('/', async (req, res) => {
 
 // ── POST /api/games/:id/metadata/refresh — refresh from providers (admin) ────
 router.post('/:id/metadata/refresh', requireAdmin, async (req, res) => {
-    const game = db.prepare('SELECT * FROM games WHERE id = ?').get(req.params.id);
+    let game = db.prepare('SELECT * FROM games WHERE id = ?').get(req.params.id);
     if (!game) return res.status(404).json({ error: 'Game not found' });
+
+    if (req.body.api_id && req.body.api_provider) {
+        db.prepare('UPDATE games SET api_id = ?, api_provider = ? WHERE id = ?').run(
+            String(req.body.api_id), String(req.body.api_provider), game.id
+        );
+        game = db.prepare('SELECT * FROM games WHERE id = ?').get(game.id);
+    }
 
     try {
         const refreshed = await refreshGameMetadata(game);

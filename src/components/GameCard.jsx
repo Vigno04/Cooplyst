@@ -4,7 +4,13 @@ import StatusBadge from './StatusBadge';
 
 function copyToClipboard(text) {
     if (navigator.clipboard?.writeText) {
-        return navigator.clipboard.writeText(text);
+        try {
+            return navigator.clipboard.writeText(text).catch(() => {
+                // Ignore promise rejection
+            });
+        } catch (err) {
+            // Synchronous throw (e.g. Firefox DOMException)
+        }
     }
     try {
         const ta = document.createElement('textarea');
